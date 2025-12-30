@@ -263,10 +263,14 @@ public class TableDefinition {
         ColumnDefinition[] columns = new ColumnDefinition[0];
 
         if (columnsInfo == null) {
-            // nothing to do
+            return DEFAULT_RESULT_COLUMNS;
         } else if (columnsInfo.startsWith(COLUMN_HEADER)) {
             List<String> lines = Utils.splitByChar(columnsInfo, '\n');
-            columns = new ColumnDefinition[lines.size() - 2];
+            int expectedColumns = lines.size() - 2;
+            if (expectedColumns <= 0) {
+                return DEFAULT_RESULT_COLUMNS;
+            }
+            columns = new ColumnDefinition[expectedColumns];
 
             int index = 0;
 
@@ -359,6 +363,10 @@ public class TableDefinition {
 
             if (sb.length() > 0) {
                 splittedColumns.add(sb.toString());
+            }
+
+            if (splittedColumns.isEmpty()) {
+                return DEFAULT_RESULT_COLUMNS;
             }
 
             int index = 0;

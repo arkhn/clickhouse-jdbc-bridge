@@ -716,8 +716,18 @@ public class JdbcDataSource extends NamedDataSource {
 
             final ResultSet rs = getFirstQueryResult(stmt, stmt.execute(loadedQuery));
 
+            // Get result columns from ResultSet metadata
+            ColumnDefinition[] resultColumns = getColumnsFromResultSet(rs, params);
+            
+            // If requestColumns is DEFAULT_RESULT_COLUMNS (has default column name), use result columns instead
+            // This happens when columnsInfo is null in the request
+            if (requestColumns != null && requestColumns.length == 1 
+                    && Utils.DEFAULT_COLUMN_NAME.equals(requestColumns[0].getName())) {
+                requestColumns = resultColumns;
+            }
+
             DataTableReader reader = new ResultSetReader(getId(), rs, params);
-            reader.process(getId(), requestColumns, customColumns, getColumnsFromResultSet(rs, params), defaultValues,
+            reader.process(getId(), requestColumns, customColumns, resultColumns, defaultValues,
                     getTimeZone(), params, writer);
 
             /*
