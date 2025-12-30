@@ -9,3 +9,4 @@ demo/
 target/
 test.sh
 test-dir/
+.DS_Store
