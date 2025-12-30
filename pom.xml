@@ -11,34 +11,37 @@
     <inceptionYear>2019</inceptionYear>
 
     <properties>
-        <caffeine.version>2.9.3</caffeine.version>
-        <dnsjava.version>3.5.0</dnsjava.version>
-        <vertx.version>3.9.13</vertx.version>
-        <micrometer.version>1.1.19</micrometer.version>
-        <slf4j.version>1.7.36</slf4j.version>
-        <hikaricp.version>3.4.5</hikaricp.version>
-        <project.current.year>2022</project.current.year>
+        <caffeine.version>3.1.8</caffeine.version>
+        <dnsjava.version>3.6.0</dnsjava.version>
+        <vertx.version>4.5.8</vertx.version>
+        <micrometer.version>1.13.0</micrometer.version>
+        <slf4j.version>2.0.9</slf4j.version>
+        <hikaricp.version>5.1.0</hikaricp.version>
+        <project.current.year>2025</project.current.year>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <java.version>1.8</java.version>
-        <testcontainers.version>1.16.3</testcontainers.version>
-        <testng.version>6.14.3</testng.version>
+        <java.version>25</java.version>
+        <maven.compiler.source>25</maven.compiler.source>
+        <maven.compiler.target>25</maven.compiler.target>
+        <testcontainers.version>1.19.8</testcontainers.version>
+        <testng.version>7.9.0</testng.version>
         <main.basedir>${project.basedir}</main.basedir>
-        <deploy-plugin.version>3.0.0-M1</deploy-plugin.version>
-        <staging-plugin.version>1.6.8</staging-plugin.version>
-        <gpg-plugin.version>1.6</gpg-plugin.version>
+        <deploy-plugin.version>3.1.1</deploy-plugin.version>
+        <staging-plugin.version>1.6.13</staging-plugin.version>
+        <gpg-plugin.version>3.2.0</gpg-plugin.version>
         <replacer-plugin.version>1.5.3</replacer-plugin.version>
-        <license-plugin.version>2.11</license-plugin.version>
+        <license-plugin.version>4.3</license-plugin.version>
         <notice-plugin.version>1.1.0</notice-plugin.version>
-        <compiler-plugin.version>3.8.1</compiler-plugin.version>
-        <source-plugin.version>3.2.1</source-plugin.version>
-        <jar-plugin.version>3.2.0</jar-plugin.version>
-        <javadoc-plugin.version>3.2.0</javadoc-plugin.version>
-        <surefire-plugin.version>3.0.0-M5</surefire-plugin.version>
-        <failsafe-plugin.version>3.0.0-M5</failsafe-plugin.version>
-        <shade-plugin.version>3.2.4</shade-plugin.version>
+        <compiler-plugin.version>3.13.0</compiler-plugin.version>
+        <source-plugin.version>3.3.1</source-plugin.version>
+        <jar-plugin.version>3.3.0</jar-plugin.version>
+        <javadoc-plugin.version>3.6.3</javadoc-plugin.version>
+        <surefire-plugin.version>3.2.5</surefire-plugin.version>
+        <failsafe-plugin.version>3.2.5</failsafe-plugin.version>
+        <shade-plugin.version>3.5.1</shade-plugin.version>
         <shade.base>com.clickhouse.jdbcbridge.internal</shade.base>
         <deb-plugin.version>1.0.20</deb-plugin.version>
         <rpm-plugin.version>2.2.0</rpm-plugin.version>
+        <rhino.version>1.7.15</rhino.version>
         <skipTests>false</skipTests>
         <skipITs>${skipTests}</skipITs>
         <skipUTs>${skipTests}</skipUTs>
@@ -113,6 +116,17 @@
             <groupId>io.vertx</groupId>
             <artifactId>vertx-micrometer-metrics</artifactId>
             <version>${vertx.version}</version>
+        </dependency>
+        <!-- JavaScript engine for script datasource -->
+        <dependency>
+            <groupId>org.mozilla</groupId>
+            <artifactId>rhino</artifactId>
+            <version>${rhino.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.mozilla</groupId>
+            <artifactId>rhino-engine</artifactId>
+            <version>${rhino.version}</version>
         </dependency>
 
         <!-- Monitoring -->
@@ -449,8 +463,9 @@
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>${compiler-plugin.version}</version>
                 <configuration>
-                    <source>${java.version}</source>
-                    <target>${java.version}</target>
+                    <source>${maven.compiler.source}</source>
+                    <target>${maven.compiler.target}</target>
+                    <release>${java.version}</release>
                 </configuration>
             </plugin>
             <plugin>

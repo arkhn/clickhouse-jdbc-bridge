@@ -1,5 +1,5 @@
-/**
- * Copyright 2019-2022, Zhichun Wu
+/*
+ * Copyright 2019-2025, Zhichun Wu
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -39,8 +39,8 @@ import javax.script.Bindings;
 import com.fasterxml.jackson.core.io.JsonStringEncoder;
 
 import io.micrometer.core.instrument.MeterRegistry;
-import io.micrometer.prometheus.PrometheusConfig;
-import io.micrometer.prometheus.PrometheusMeterRegistry;
+import io.micrometer.prometheusmetrics.PrometheusConfig;
+import io.micrometer.prometheusmetrics.PrometheusMeterRegistry;
 import io.vertx.core.json.JsonObject;
 
 /**

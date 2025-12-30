@@ -1,9 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- 
-    Snapshot of https://source.jasig.org/licenses/license-mappings.xml on 2020-10-08
+    Snapshot of https://source.jasig.org/licenses/license-mappings.xml on 2025-12-30
 -->
 <license-lookup xmlns="https://source.jasig.org/schemas/maven-notice-plugin/license-lookup"
-    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="https://source.jasig.org/schemas/maven-notice-plugin/license-lookup https://source.jasig.org/schemas/maven-notice-plugin/license-lookup/license-lookup-v1.0.xsd">
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="https://source.jasig.org/schemas/maven-notice-plugin/license-lookup https://source.jasig.org/schemas/maven-notice-plugin/license-lookup/license-lookup-v1.0.xsd">
     <artifact>
         <groupId>antisamy-bin</groupId>
         <artifactId>org.owasp.validator</artifactId>
@@ -534,6 +535,11 @@
     </artifact>
     <artifact>
         <groupId>org.slf4j</groupId>
+        <artifactId>slf4j-log4j12</artifactId>
+        <license>MIT License</license>
+    </artifact>
+    <artifact>
+        <groupId>org.slf4j</groupId>
         <artifactId>slf4j-jdk14</artifactId>
         <license>MIT License</license>
     </artifact>
@@ -1002,7 +1008,7 @@
     <artifact>
         <groupId>org.restlet.jee</groupId>
         <artifactId>org.restlet.ext.spring</artifactId>
-        <license>GPL 3.0 license</license>
+        <license>GPL 3.0 license</license>        
     </artifact>
     <artifact>
         <groupId>org.apache.tomcat</groupId>
