@@ -37,7 +37,7 @@
         <javadoc-plugin.version>3.6.3</javadoc-plugin.version>
         <surefire-plugin.version>3.2.5</surefire-plugin.version>
         <failsafe-plugin.version>3.2.5</failsafe-plugin.version>
-        <shade-plugin.version>3.5.1</shade-plugin.version>
+        <shade-plugin.version>3.6.1</shade-plugin.version>
         <shade.base>com.clickhouse.jdbcbridge.internal</shade.base>
         <deb-plugin.version>1.0.20</deb-plugin.version>
         <rpm-plugin.version>2.2.0</rpm-plugin.version>
@@ -514,6 +514,18 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-shade-plugin</artifactId>
                 <version>${shade-plugin.version}</version>
+                <dependencies>
+                    <dependency>
+                        <groupId>org.ow2.asm</groupId>
+                        <artifactId>asm</artifactId>
+                        <version>9.9.1</version>
+                    </dependency>
+                    <dependency>
+                        <groupId>org.ow2.asm</groupId>
+                        <artifactId>asm-commons</artifactId>
+                        <version>9.9.1</version>
+                    </dependency>
+                </dependencies>
                 <configuration>
                     <shadedArtifactAttached>true</shadedArtifactAttached>
                     <createDependencyReducedPom>true</createDependencyReducedPom>
