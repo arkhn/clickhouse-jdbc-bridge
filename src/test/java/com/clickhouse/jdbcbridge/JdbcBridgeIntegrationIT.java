@@ -158,20 +158,18 @@ public class JdbcBridgeIntegrationIT {
         Files.createDirectories(datasourcesDir);
         
         // Create MySQL datasource config
-        // Use driverUrls to load from Maven Central or classpath
-        // Use localhost with mapped port since we're running on the host
-        String mysqlJdbcUrl = String.format("jdbc:mysql://localhost:%d/testdb?useSSL=false&allowPublicKeyRetrieval=true", 
+        // The MySQL driver is already in the test classpath (mysql-connector-j 8.2.0)
+        // so we don't need driverUrls - just use the driver from classpath
+        String mysqlJdbcUrl = String.format("jdbc:mysql://localhost:%d/testdb?useSSL=false&allowPublicKeyRetrieval=true",
                 mysqlContainer.getMappedPort(3306));
         JsonObject mysqlConfig = new JsonObject()
                 .put("mysql", new JsonObject()
-                        .put("driverUrls", new io.vertx.core.json.JsonArray()
-                                .add("https://repo1.maven.org/maven2/com/mysql/mysql-connector-j/8.2.0/mysql-connector-j-8.2.0.jar"))
                         .put("driverClassName", "com.mysql.cj.jdbc.Driver")
                         .put("jdbcUrl", mysqlJdbcUrl)
                         .put("username", mysqlContainer.getUsername())
                         .put("password", mysqlContainer.getPassword())
-                        .put("initializationFailTimeout", 0)
-                        .put("minimumIdle", 0)
+                        .put("initializationFailTimeout", 30000)
+                        .put("minimumIdle", 1)
                         .put("maximumPoolSize", 5));
         
         Files.write(datasourcesDir.resolve("mysql.json"), mysqlConfig.encodePrettily().getBytes());
@@ -245,6 +243,52 @@ public class JdbcBridgeIntegrationIT {
             System.out.println("JDBC Bridge server is ready on port " + bridgePort);
         } else {
             throw new RuntimeException("JDBC Bridge server did not become ready after " + maxAttempts + " attempts");
+        }
+
+        // Wait for the datasource configuration to be loaded and verify MySQL connectivity
+        // The config scan period is 5 seconds, so wait a bit for configs to load
+        Thread.sleep(2000);
+
+        // Warmup query to ensure MySQL datasource is fully initialized
+        System.out.println("Warming up MySQL datasource...");
+        for (int attempt = 0; attempt < 10; attempt++) {
+            try {
+                CompletableFuture<io.vertx.core.http.HttpClientResponse> warmupFuture = new CompletableFuture<>();
+                String warmupQuery = "connection_string=mysql&table=" + java.net.URLEncoder.encode("SELECT 1", "UTF-8");
+
+                client.request(io.vertx.core.http.HttpMethod.POST, bridgePort, "localhost", "/")
+                        .onSuccess(request -> {
+                            request.putHeader("Content-Type", "application/x-www-form-urlencoded")
+                                    .send(warmupQuery)
+                                    .onSuccess(warmupFuture::complete)
+                                    .onFailure(warmupFuture::completeExceptionally);
+                        })
+                        .onFailure(warmupFuture::completeExceptionally);
+
+                io.vertx.core.http.HttpClientResponse warmupResponse = warmupFuture.get(10, TimeUnit.SECONDS);
+                if (warmupResponse.statusCode() == 200) {
+                    // Read the body to ensure connection is fully established
+                    CompletableFuture<String> bodyFuture = new CompletableFuture<>();
+                    warmupResponse.body().onSuccess(body -> {
+                        bodyFuture.complete(body.toString());
+                    }).onFailure(bodyFuture::completeExceptionally);
+                    String body = bodyFuture.get(5, TimeUnit.SECONDS);
+                    if (body.length() > 0) {
+                        System.out.println("MySQL datasource warmup successful (response length: " + body.length() + ")");
+                        break;
+                    }
+                }
+                System.out.println("Warmup attempt " + (attempt + 1) + " - waiting for datasource...");
+                Thread.sleep(1000);
+            } catch (Exception e) {
+                if (attempt < 9) {
+                    System.out.println("Warmup attempt " + (attempt + 1) + " failed: " + e.getMessage() + ", retrying...");
+                    Thread.sleep(1000);
+                } else {
+                    System.err.println("MySQL datasource warmup failed after 10 attempts: " + e.getMessage());
+                    // Continue anyway - the actual test will fail with a clearer error if there's a real problem
+                }
+            }
         }
     }
     
