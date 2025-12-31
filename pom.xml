@@ -503,6 +503,7 @@
                     <source>${maven.compiler.source}</source>
                     <target>${maven.compiler.target}</target>
                     <release>${java.version}</release>
+                    <fork>true</fork>
                     <useIncrementalCompilation>true</useIncrementalCompilation>
                 </configuration>
             </plugin>
