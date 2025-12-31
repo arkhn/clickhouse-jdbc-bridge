@@ -26,13 +26,16 @@ import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.Statement;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
+import org.testcontainers.Testcontainers;
+import org.testcontainers.containers.BindMode;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.MySQLContainer;
 import org.testcontainers.containers.Network;
-import org.testcontainers.containers.OracleContainer;
 import org.testcontainers.containers.wait.strategy.Wait;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
@@ -68,27 +71,21 @@ public class JdbcBridgeIntegrationIT {
                     .waitingFor(Wait.forListeningPort().withStartupTimeout(Duration.ofSeconds(60)));
             mysqlContainer.start();
             System.out.println("MySQL container started");
-            
-            System.out.println("Starting ClickHouse container...");
-            clickHouseContainer = new GenericContainer<>("clickhouse/clickhouse-server:22.3")
-                    .withNetwork(sharedNetwork)
-                    .withNetworkAliases("clickhouse_server")
-                    .withExposedPorts(8123, 9000)
-                    .waitingFor(Wait.forListeningPort().withStartupTimeout(Duration.ofSeconds(120)));
-            clickHouseContainer.start();
-            System.out.println("ClickHouse container started");
-            
+
             // Setup test data in MySQL
             System.out.println("Setting up MySQL test data...");
             setupMySQLData();
-            
+
             // Create config directory in target/test-classes/sit/jdbc-bridge (like existing test)
             System.out.println("Creating config files...");
             Path sitConfigDir = Paths.get("target/test-classes/sit/jdbc-bridge");
             Files.createDirectories(sitConfigDir);
             configDir = sitConfigDir;
             createConfigFiles();
-            
+
+            // Create ClickHouse config for JDBC bridge
+            createClickHouseJdbcBridgeConfig();
+
             // Verify config files were created
             System.out.println("Config directory: " + configDir.toAbsolutePath());
             System.out.println("Config files created:");
@@ -97,17 +94,52 @@ public class JdbcBridgeIntegrationIT {
                     System.out.println("  " + configDir.relativize(path));
                 }
             });
-            
+
             // Start JDBC Bridge directly using Java code
             System.out.println("Starting JDBC Bridge...");
             startJdbcBridge();
-            
+
+            // Expose the bridge port to containers so ClickHouse can access it
+            System.out.println("Exposing bridge port " + bridgePort + " to containers...");
+            Testcontainers.exposeHostPorts(bridgePort);
+
+            // Now start ClickHouse with the JDBC bridge config
+            System.out.println("Starting ClickHouse container...");
+            Path clickHouseConfigPath = configDir.resolve("clickhouse-jdbc-bridge.xml").toAbsolutePath();
+            clickHouseContainer = new GenericContainer<>("clickhouse/clickhouse-server:22.3")
+                    .withNetwork(sharedNetwork)
+                    .withNetworkAliases("clickhouse_server")
+                    .withExposedPorts(8123, 9000)
+                    .withFileSystemBind(
+                            clickHouseConfigPath.toString(),
+                            "/etc/clickhouse-server/config.d/jdbc_bridge.xml",
+                            BindMode.READ_ONLY)
+                    .waitingFor(Wait.forListeningPort().withStartupTimeout(Duration.ofSeconds(120)));
+            clickHouseContainer.start();
+            System.out.println("ClickHouse container started");
+
             System.out.println("Setup complete!");
         } catch (Exception e) {
             System.err.println("Setup failed: " + e.getMessage());
             e.printStackTrace();
             throw e;
         }
+    }
+
+    private static void createClickHouseJdbcBridgeConfig() throws IOException {
+        // Create ClickHouse config file to configure JDBC bridge connection
+        // The bridge runs on the host, accessible via host.testcontainers.internal
+        String configXml = "<?xml version=\"1.0\"?>\n" +
+                "<clickhouse>\n" +
+                "    <jdbc_bridge>\n" +
+                "        <host>host.testcontainers.internal</host>\n" +
+                "        <port>" + bridgePort + "</port>\n" +
+                "    </jdbc_bridge>\n" +
+                "</clickhouse>\n";
+
+        Path configPath = configDir.resolve("clickhouse-jdbc-bridge.xml");
+        Files.write(configPath, configXml.getBytes());
+        System.out.println("Created ClickHouse JDBC bridge config at: " + configPath);
     }
     
     private static void setupMySQLData() throws Exception {
@@ -395,12 +427,12 @@ public class JdbcBridgeIntegrationIT {
     public void testClickHouseJdbcBridgeConnection() throws Exception {
         // Test that ClickHouse is accessible
         HttpClient client = vertx.createHttpClient();
-        
+
         // Test that we can at least ping ClickHouse
         CompletableFuture<Integer> pingFuture = new CompletableFuture<>();
-        client.request(io.vertx.core.http.HttpMethod.GET, 
-                        clickHouseContainer.getMappedPort(8123), 
-                        clickHouseContainer.getHost(), 
+        client.request(io.vertx.core.http.HttpMethod.GET,
+                        clickHouseContainer.getMappedPort(8123),
+                        clickHouseContainer.getHost(),
                         "/ping")
                 .onSuccess(request -> {
                     request.send().onSuccess(response -> {
@@ -408,9 +440,100 @@ public class JdbcBridgeIntegrationIT {
                     }).onFailure(pingFuture::completeExceptionally);
                 })
                 .onFailure(pingFuture::completeExceptionally);
-        
+
         Integer statusCode = pingFuture.get(10, TimeUnit.SECONDS);
         assertEquals(statusCode.intValue(), 200, "ClickHouse should be accessible");
+    }
+
+    @Test(groups = { "sit" })
+    public void testEndToEndClickHouseToMySQLViaJdbcBridge() throws Exception {
+        // E2E test: ClickHouse -> JDBC Bridge -> MySQL
+        // This tests the full flow using ClickHouse's jdbc() table function
+
+        // Disable compression to avoid LZ4 library dependency
+        String clickHouseUrl = String.format("jdbc:clickhouse://%s:%d/default?compress=0",
+                clickHouseContainer.getHost(),
+                clickHouseContainer.getMappedPort(8123));
+
+        System.out.println("Connecting to ClickHouse at: " + clickHouseUrl);
+
+        try (Connection conn = DriverManager.getConnection(clickHouseUrl);
+             Statement stmt = conn.createStatement()) {
+
+            // Test 1: Query using jdbc() with SQL query syntax
+            // Syntax: jdbc('named_datasource', 'sql query')
+            System.out.println("Testing jdbc() table function with SQL query...");
+            String query1 = "SELECT * FROM jdbc('mysql', 'SELECT * FROM test_table ORDER BY id')";
+
+            ResultSet rs1 = stmt.executeQuery(query1);
+            List<String> results1 = new ArrayList<>();
+            while (rs1.next()) {
+                int id = rs1.getInt("id");
+                String name = rs1.getString("name");
+                int value = rs1.getInt("value");
+                String row = String.format("id=%d, name=%s, value=%d", id, name, value);
+                results1.add(row);
+                System.out.println("  Row: " + row);
+            }
+            rs1.close();
+
+            assertEquals(results1.size(), 3, "Should return 3 rows from MySQL");
+            assertTrue(results1.get(0).contains("id=1"), "First row should have id=1");
+            assertTrue(results1.get(0).contains("name=test1"), "First row should have name=test1");
+            assertTrue(results1.get(0).contains("value=100"), "First row should have value=100");
+            assertTrue(results1.get(1).contains("id=2"), "Second row should have id=2");
+            assertTrue(results1.get(2).contains("id=3"), "Third row should have id=3");
+
+            // Test 2: Query using jdbc() with schema and table syntax
+            // Syntax: jdbc('named_datasource', 'schema', 'table')
+            System.out.println("Testing jdbc() table function with schema/table syntax...");
+            String query2 = "SELECT * FROM jdbc('mysql', 'testdb', 'test_table') ORDER BY id";
+
+            ResultSet rs2 = stmt.executeQuery(query2);
+            List<String> results2 = new ArrayList<>();
+            while (rs2.next()) {
+                int id = rs2.getInt("id");
+                String name = rs2.getString("name");
+                int value = rs2.getInt("value");
+                String row = String.format("id=%d, name=%s, value=%d", id, name, value);
+                results2.add(row);
+                System.out.println("  Row: " + row);
+            }
+            rs2.close();
+
+            assertEquals(results2.size(), 3, "Should return 3 rows from MySQL via schema/table syntax");
+
+            // Test 3: Query with WHERE clause through jdbc()
+            System.out.println("Testing jdbc() table function with WHERE clause...");
+            String query3 = "SELECT * FROM jdbc('mysql', 'SELECT * FROM test_table WHERE value > 150')";
+
+            ResultSet rs3 = stmt.executeQuery(query3);
+            List<String> results3 = new ArrayList<>();
+            while (rs3.next()) {
+                int id = rs3.getInt("id");
+                String name = rs3.getString("name");
+                int value = rs3.getInt("value");
+                String row = String.format("id=%d, name=%s, value=%d", id, name, value);
+                results3.add(row);
+                System.out.println("  Row: " + row);
+            }
+            rs3.close();
+
+            assertEquals(results3.size(), 2, "Should return 2 rows where value > 150");
+
+            // Test 4: Aggregation through jdbc()
+            System.out.println("Testing jdbc() table function with aggregation...");
+            String query4 = "SELECT sum(value) as total FROM jdbc('mysql', 'SELECT * FROM test_table')";
+
+            ResultSet rs4 = stmt.executeQuery(query4);
+            assertTrue(rs4.next(), "Should have aggregation result");
+            long total = rs4.getLong("total");
+            System.out.println("  Total value: " + total);
+            assertEquals(total, 600L, "Sum of values should be 600 (100+200+300)");
+            rs4.close();
+
+            System.out.println("E2E test completed successfully!");
+        }
     }
 }
 

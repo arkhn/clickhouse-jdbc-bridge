@@ -22,6 +22,7 @@ This project includes:
   Caffeine cache under Apache License, Version 2.0
   Checker Qual under The MIT License
   ClickHouse JDBC Bridge under Apache License, Version 2.0
+  ClickHouse JDBC Driver under The Apache Software License, Version 2.0
   dnsjava under BSD-3-Clause
   docker-java-api under The Apache Software License, Version 2.0
   docker-java-transport under The Apache Software License, Version 2.0

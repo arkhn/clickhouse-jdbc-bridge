@@ -31,13 +31,13 @@
         <replacer-plugin.version>1.5.3</replacer-plugin.version>
         <license-plugin.version>4.3</license-plugin.version>
         <notice-plugin.version>1.1.0</notice-plugin.version>
-        <compiler-plugin.version>3.13.0</compiler-plugin.version>
+        <compiler-plugin.version>3.14.0</compiler-plugin.version>
         <source-plugin.version>3.3.1</source-plugin.version>
-        <jar-plugin.version>3.3.0</jar-plugin.version>
-        <javadoc-plugin.version>3.6.3</javadoc-plugin.version>
-        <surefire-plugin.version>3.2.5</surefire-plugin.version>
-        <failsafe-plugin.version>3.2.5</failsafe-plugin.version>
-        <shade-plugin.version>3.6.1</shade-plugin.version>
+        <jar-plugin.version>3.4.2</jar-plugin.version>
+        <javadoc-plugin.version>3.11.2</javadoc-plugin.version>
+        <surefire-plugin.version>3.5.2</surefire-plugin.version>
+        <failsafe-plugin.version>3.5.2</failsafe-plugin.version>
+        <shade-plugin.version>3.6.0</shade-plugin.version>
         <shade.base>com.clickhouse.jdbcbridge.internal</shade.base>
         <deb-plugin.version>1.0.20</deb-plugin.version>
         <rpm-plugin.version>2.2.0</rpm-plugin.version>
@@ -196,6 +196,12 @@
             <groupId>com.oracle.database.jdbc</groupId>
             <artifactId>ojdbc8</artifactId>
             <version>23.3.0.23.09</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.clickhouse</groupId>
+            <artifactId>clickhouse-jdbc</artifactId>
+            <version>0.6.0</version>
             <scope>test</scope>
         </dependency>
     </dependencies>
@@ -497,6 +503,7 @@
                     <source>${maven.compiler.source}</source>
                     <target>${maven.compiler.target}</target>
                     <release>${java.version}</release>
+                    <useIncrementalCompilation>true</useIncrementalCompilation>
                 </configuration>
             </plugin>
             <plugin>
