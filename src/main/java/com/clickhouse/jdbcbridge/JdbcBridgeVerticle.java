@@ -1,5 +1,5 @@
-/**
- * Copyright 2019-2022, Zhichun Wu
+/*
+ * Copyright 2019-2025, Zhichun Wu
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -256,8 +256,8 @@ public class JdbcBridgeVerticle extends AbstractVerticle implements ExtensionMan
 
         router.route("/metrics").handler(PrometheusScrapingHandler.create());
 
-        router.route().handler(BodyHandler.create()).handler(this::responseHandlers)
-                .handler(ResponseContentTypeHandler.create()).failureHandler(this::errorHandler);
+        router.route().handler(ResponseContentTypeHandler.create()).handler(BodyHandler.create())
+                .handler(this::responseHandlers).failureHandler(this::errorHandler);
 
         // stateless endpoints
         router.get("/ping").handler(requestTimeoutHandler).handler(this::handlePing);
@@ -286,7 +286,7 @@ public class JdbcBridgeVerticle extends AbstractVerticle implements ExtensionMan
     private void responseHandlers(RoutingContext ctx) {
         HttpServerRequest req = ctx.request();
 
-        String path = ctx.normalisedPath();
+        String path = ctx.normalizedPath();
         if (log.isDebugEnabled()) {
             log.debug("[{}] Context:\n{}", path, ctx.data());
             log.debug("[{}] Headers:\n{}", path, req.headers());
@@ -300,15 +300,15 @@ public class JdbcBridgeVerticle extends AbstractVerticle implements ExtensionMan
 
         ctx.response().endHandler(handler -> {
             if (log.isTraceEnabled()) {
-                log.trace("[{}] About to end response...", ctx.normalisedPath());
+                log.trace("[{}] About to end response...", ctx.normalizedPath());
             }
         }).closeHandler(handler -> {
             if (log.isTraceEnabled()) {
-                log.trace("[{}] About to close response...", ctx.normalisedPath());
+                log.trace("[{}] About to close response...", ctx.normalizedPath());
             }
         }).drainHandler(handler -> {
             if (log.isTraceEnabled()) {
-                log.trace("[{}] About to drain response...", ctx.normalisedPath());
+                log.trace("[{}] About to drain response...", ctx.normalizedPath());
             }
         }).exceptionHandler(throwable -> {
             log.error("Caught exception", throwable);

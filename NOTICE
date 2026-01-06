@@ -18,10 +18,14 @@ specific language governing permissions and limitations
 under the License.
 
 This project includes:
-  Apache Commons Compress under Apache License, Version 2.0
+  Apache Commons Compress under Apache-2.0
+  Apache HttpClient under Apache License, Version 2.0
+  Apache HttpComponents Core HTTP/1.1 under Apache License, Version 2.0
+  Apache HttpComponents Core HTTP/2 under Apache License, Version 2.0
   Caffeine cache under Apache License, Version 2.0
   Checker Qual under The MIT License
   ClickHouse JDBC Bridge under Apache License, Version 2.0
+  ClickHouse JDBC Driver under The Apache Software License, Version 2.0
   dnsjava under BSD-3-Clause
   docker-java-api under The Apache Software License, Version 2.0
   docker-java-transport under The Apache Software License, Version 2.0
@@ -33,14 +37,17 @@ This project includes:
   HikariCP under The Apache Software License, Version 2.0
   Jackson-annotations under The Apache Software License, Version 2.0
   Jackson-core under The Apache Software License, Version 2.0
-  jackson-databind under The Apache Software License, Version 2.0
-  Java Native Access under LGPL, version 2.1 or Apache License v2.0
-  jcommander under Apache 2.0
+  Java Native Access under LGPL-2.1-or-later or Apache-2.0
+  jcommander under Apache License, Version 2.0
   JetBrains Java Annotations under The Apache Software License, Version 2.0
+  jquery under MIT License
   JUnit under Eclipse Public License 1.0
   LatencyUtils under Public Domain, per Creative Commons CC0
+  micrometer-commons under The Apache Software License, Version 2.0
   micrometer-core under The Apache Software License, Version 2.0
+  micrometer-observation under The Apache Software License, Version 2.0
   micrometer-registry-prometheus under The Apache Software License, Version 2.0
+  MySQL Connector/J under The GNU General Public License, v2 with Universal FOSS Exception, v1.0
   Netty/Buffer under Apache License, Version 2.0
   Netty/Codec under Apache License, Version 2.0
   Netty/Codec/DNS under Apache License, Version 2.0
@@ -52,17 +59,31 @@ This project includes:
   Netty/Handler/Proxy under Apache License, Version 2.0
   Netty/Resolver under Apache License, Version 2.0
   Netty/Resolver/DNS under Apache License, Version 2.0
-  Netty/TomcatNative [OpenSSL - Classes] under The Apache Software License, Version 2.0
   Netty/Transport under Apache License, Version 2.0
-  Prometheus Java Simpleclient under The Apache Software License, Version 2.0
-  Prometheus Java Simpleclient Common under The Apache Software License, Version 2.0
+  Netty/Transport/Native/Unix/Common under Apache License, Version 2.0
+  ojdbc8 under Oracle Free Use Terms and Conditions (FUTC)
+  Prometheus Metrics Config under The Apache Software License, Version 2.0
+  Prometheus Metrics Core under The Apache Software License, Version 2.0
+  Prometheus Metrics Exposition Formats under The Apache Software License, Version 2.0
+  Prometheus Metrics Model under The Apache Software License, Version 2.0
+  Prometheus Metrics Tracer Common under The Apache Software License, Version 2.0
+  Protocol Buffers [Core] under BSD-3-Clause
+  rhino under Mozilla Public License, Version 2.0
+  rhino-engine under Mozilla Public License, Version 2.0
+  Shaded Protobuf under The Apache Software License, Version 2.0
   SLF4J API Module under MIT License
-  SLF4J JDK14 Binding under MIT License
+  SLF4J JDK14 Provider under MIT License
+  Testcontainers :: Database-Commons under MIT
+  Testcontainers :: JDBC under MIT
+  Testcontainers :: JDBC :: ClickHouse under MIT
+  Testcontainers :: JDBC :: MySQL under MIT
+  Testcontainers :: JDBC :: Oracle XE under MIT
   Testcontainers Core under MIT
-  testng under Apache 2.0
+  testng under Apache License, Version 2.0
   Vert.x Bridge Common under The Apache Software License, Version 2.0 or Eclipse Public License - v 1.0
   Vert.x Core under The Apache Software License, Version 2.0 or Eclipse Public License - v 2.0
   Vert.x metrics implementation for Micrometer.io under The Apache Software License, Version 2.0 or Eclipse Public License - v 1.0
+  Vert.x URI Template under The Apache Software License, Version 2.0 or Eclipse Public License - v 1.0
   vertx-auth-common under The Apache Software License, Version 2.0 or Eclipse Public License - v 1.0
   vertx-config under Apache License, Version 2.0
   vertx-web under The Apache Software License, Version 2.0 or Eclipse Public License - v 2.0
