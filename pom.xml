@@ -6,7 +6,7 @@
     <packaging>jar</packaging>
     <version>2.1.0-SNAPSHOT</version>
     <name>ClickHouse JDBC Bridge</name>
-    <url>https://github.com/ClickHouse/clickhouse-jdbc-bridge</url>
+    <url>https://github.com/arkhn/clickhouse-jdbc-bridge</url>
     <description>JDBC bridge for ClickHouse.</description>
     <inceptionYear>2019</inceptionYear>
 
@@ -424,18 +424,8 @@
                         <groupId>org.sonatype.plugins</groupId>
                         <artifactId>nexus-staging-maven-plugin</artifactId>
                         <version>${staging-plugin.version}</version>
-                        <executions>
-                            <execution>
-                                <id>default-deploy</id>
-                                <phase>deploy</phase>
-                                <goals>
-                                    <goal>deploy</goal>
-                                </goals>
-                            </execution>
-                        </executions>
                         <configuration>
-                            <serverId>ossrh</serverId>
-                            <nexusUrl>https://s01.oss.sonatype.org/</nexusUrl>
+                            <skipNexusStagingDeployMojo>true</skipNexusStagingDeployMojo>
                         </configuration>
                     </plugin>
                 </plugins>

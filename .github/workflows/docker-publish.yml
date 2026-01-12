@@ -3,38 +3,25 @@ name: Docker Publish
 on:
   workflow_dispatch:
     inputs:
-      major:
-        description: "Major version"
+      version:
+        description: "Version (e.g., 2.1.0)"
         required: true
-        default: "2"
-      minor:
-        description: "Minor version"
-        required: false
-        default: "1"
-      patch:
-        description: "Patch"
-        required: false
-        default: "0"
+        default: "2.1.0"
   workflow_call:
     inputs:
-      major:
-        description: "Major version"
+      version:
+        description: "Version (e.g., 2.1.0)"
         required: true
         type: string
-      minor:
-        description: "Minor version"
-        required: false
-        type: string
-        default: "1"
-      patch:
-        description: "Patch"
-        required: false
-        type: string
-        default: "0"
+    secrets:
+      DOCKER_LOGIN:
+        required: true
+      DOCKER_PASSWORD:
+        required: true
 
 env:
   REGISTRY_IMAGE: arkhn/clickhouse-jdbc-bridge
-  VERSION: ${{ inputs.major || github.event.inputs.major }}.${{ inputs.minor || github.event.inputs.minor }}.${{ inputs.patch || github.event.inputs.patch }}
+  VERSION: ${{ inputs.version || github.event.inputs.version }}
 
 jobs:
   build-base:

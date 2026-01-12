@@ -1,0 +1,52 @@
+{
+  "plugins": [
+    [
+      "@semantic-release/commit-analyzer",
+      {
+        "preset": "conventionalcommits"
+      }
+    ],
+    [
+      "@semantic-release/release-notes-generator",
+      {
+        "preset": "conventionalcommits",
+        "writerOpts": {
+          "commitGroupsSort": "title",
+          "commitsSort": ["scope", "subject"]
+        }
+      }
+    ],
+    [
+      "@semantic-release/changelog",
+      {
+        "changelogFile": "CHANGELOG.md"
+      }
+    ],
+    [
+      "@semantic-release/exec",
+      {
+        "prepareCmd": "mvn notice:generate && mvn versions:set -DnewVersion=${nextRelease.version} -DgenerateBackupPoms=false && TESTCONTAINERS_RYUK_DISABLED=true mvn clean package -Prelease -DskipTests --batch-mode"
+      }
+    ],
+    [
+      "@semantic-release/git",
+      {
+        "assets": ["CHANGELOG.md", "pom.xml", "NOTICE"],
+        "message": "chore(release): ${nextRelease.version}\n\n${nextRelease.notes}"
+      }
+    ],
+    [
+      "@semantic-release/github",
+      {
+        "assets": [
+          { "path": "target/clickhouse-jdbc-bridge-*.jar", "label": "JAR artifact" },
+          { "path": "target/clickhouse-jdbc-bridge-*-shaded.jar", "label": "Shaded JAR artifact" },
+          { "path": "target/*.deb", "label": "DEB package" },
+          { "path": "target/**/*.rpm", "label": "RPM package" },
+          { "path": "LICENSE", "label": "License" },
+          { "path": "NOTICE", "label": "Notice" }
+        ]
+      }
+    ]
+  ]
+}
