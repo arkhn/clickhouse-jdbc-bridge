@@ -22,6 +22,9 @@
 ARG BASE_IMAGE=arkhn/clickhouse-jdbc-bridge:base
 FROM ${BASE_IMAGE}
 
+# Maintainer
+LABEL maintainer="infra@arkhn.com"
+
 # Labels
 LABEL app_name="ClickHouse JDBC Bridge" variant="full"
 

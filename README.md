@@ -1,9 +1,8 @@
-> [!NOTE]
-> clickhouse-jdbc-bridge contains experimental codes and is no longer supported. It may contain reliability and security vulnerabilities. Use it at your own risk.
-
 # ClickHouse JDBC Bridge
 
-![Build](https://github.com/ClickHouse/clickhouse-jdbc-bridge/workflows/Build/badge.svg) ![Release](https://img.shields.io/github/v/release/ClickHouse/clickhouse-jdbc-bridge?include_prereleases)
+**Maintainer**: Arkhn (infra@arkhn.com) - 2025-2026
+
+![Build](https://github.com/arkhn/clickhouse-jdbc-bridge/workflows/Build/badge.svg) ![Release](https://img.shields.io/github/v/release/arkhn/clickhouse-jdbc-bridge?include_prereleases)
 
 JDBC bridge for ClickHouse®. It acts as a stateless proxy passing queries from ClickHouse to external datasources. With this extension, you can run distributed query on ClickHouse across multiple datasources in real time, which in a way simplifies the process of building data pipelines for data warehousing, monitoring and integrity check etc.
 

@@ -46,7 +46,7 @@ RUN apt-get update \
 FROM clickhouse/clickhouse-server:${revision}
 
 # Maintainer
-LABEL maintainer="zhicwu@gmail.com"
+LABEL maintainer="infra@arkhn.com"
 
 COPY --from=builder /app/target/clickhouse-jdbc-bridge*.deb /
 

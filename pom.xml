@@ -60,6 +60,13 @@
             <name>Zhichun Wu</name>
             <email>zhicwu@gmail.com</email>
         </developer>
+        <developer>
+            <name>Arkhn</name>
+            <email>infra@arkhn.com</email>
+            <roles>
+                <role>maintainer</role>
+            </roles>
+        </developer>
     </developers>
 
     <scm>
