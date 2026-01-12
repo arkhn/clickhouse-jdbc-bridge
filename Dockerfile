@@ -19,7 +19,7 @@
 # under the License.
 
 # Full image: Extends base image with all JDBC drivers pre-installed
-ARG BASE_IMAGE=arkhn/clickhouse:base
+ARG BASE_IMAGE=arkhn/clickhouse-jdbc-bridge:base
 FROM ${BASE_IMAGE}
 
 # Labels

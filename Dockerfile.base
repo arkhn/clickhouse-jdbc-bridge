@@ -22,10 +22,10 @@
 FROM eclipse-temurin:25-jre-jammy
 
 ARG revision=latest
-ARG repository=ClickHouse/clickhouse-jdbc-bridge
+ARG repository=arkhn/clickhouse-jdbc-bridge
 
 # Maintainer
-LABEL maintainer="zhicwu@gmail.com"
+LABEL maintainer="infra@arkhn.com"
 
 # Environment variables
 ENV JDBC_BRIDGE_HOME=/app JDBC_BRIDGE_VERSION=${revision} \

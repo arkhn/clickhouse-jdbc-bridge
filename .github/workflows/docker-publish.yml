@@ -15,9 +15,26 @@ on:
         description: "Patch"
         required: false
         default: "0"
+  workflow_call:
+    inputs:
+      major:
+        description: "Major version"
+        required: true
+        type: string
+      minor:
+        description: "Minor version"
+        required: false
+        type: string
+        default: "1"
+      patch:
+        description: "Patch"
+        required: false
+        type: string
+        default: "0"
 
 env:
-  REGISTRY_IMAGE: arkhn/clickhouse
+  REGISTRY_IMAGE: arkhn/clickhouse-jdbc-bridge
+  VERSION: ${{ inputs.major || github.event.inputs.major }}.${{ inputs.minor || github.event.inputs.minor }}.${{ inputs.patch || github.event.inputs.patch }}
 
 jobs:
   build-base:
@@ -46,11 +63,11 @@ jobs:
           file: ./Dockerfile.base
           push: true
           build-args: |
-            revision=${{ github.event.inputs.major }}.${{ github.event.inputs.minor }}.${{ github.event.inputs.patch }}
+            revision=${{ env.VERSION }}
             repository=${{ github.repository }}
           tags: |
             ${{ env.REGISTRY_IMAGE }}:base
-            ${{ env.REGISTRY_IMAGE }}:v${{ github.event.inputs.major }}.${{ github.event.inputs.minor }}.${{ github.event.inputs.patch }}-base
+            ${{ env.REGISTRY_IMAGE }}:v${{ env.VERSION }}-base
 
   build-full:
     name: "Build and Push Full Image"
@@ -79,7 +96,7 @@ jobs:
           file: ./Dockerfile
           push: true
           build-args: |
-            BASE_IMAGE=${{ env.REGISTRY_IMAGE }}:v${{ github.event.inputs.major }}.${{ github.event.inputs.minor }}.${{ github.event.inputs.patch }}-base
+            BASE_IMAGE=${{ env.REGISTRY_IMAGE }}:v${{ env.VERSION }}-base
           tags: |
             ${{ env.REGISTRY_IMAGE }}:full
-            ${{ env.REGISTRY_IMAGE }}:v${{ github.event.inputs.major }}.${{ github.event.inputs.minor }}.${{ github.event.inputs.patch }}-full
+            ${{ env.REGISTRY_IMAGE }}:v${{ env.VERSION }}-full
