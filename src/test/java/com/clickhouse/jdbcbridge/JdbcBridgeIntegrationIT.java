@@ -114,9 +114,14 @@ public class JdbcBridgeIntegrationIT {
                             clickHouseConfigPath.toString(),
                             "/etc/clickhouse-server/config.d/jdbc_bridge.xml",
                             BindMode.READ_ONLY)
-                    .waitingFor(Wait.forListeningPort().withStartupTimeout(Duration.ofSeconds(120)));
+                    .waitingFor(Wait.forHttp("/ping").forStatusCode(200).withStartupTimeout(Duration.ofSeconds(120)));
             clickHouseContainer.start();
             System.out.println("ClickHouse container started");
+            
+            // Additional wait to ensure ClickHouse is fully ready for JDBC connections
+            System.out.println("Waiting for ClickHouse to be ready for JDBC connections...");
+            waitForClickHouseReady();
+            System.out.println("ClickHouse is ready for JDBC connections");
 
             System.out.println("Setup complete!");
         } catch (Exception e) {
@@ -140,6 +145,35 @@ public class JdbcBridgeIntegrationIT {
         Path configPath = configDir.resolve("clickhouse-jdbc-bridge.xml");
         Files.write(configPath, configXml.getBytes());
         System.out.println("Created ClickHouse JDBC bridge config at: " + configPath);
+    }
+    
+    private static void waitForClickHouseReady() throws Exception {
+        // Wait for ClickHouse to be ready for JDBC connections
+        String clickHouseUrl = String.format("jdbc:clickhouse://%s:%d/default?compress=0",
+                clickHouseContainer.getHost(),
+                clickHouseContainer.getMappedPort(8123));
+        
+        int maxAttempts = 30;
+        for (int attempt = 0; attempt < maxAttempts; attempt++) {
+            try {
+                try (Connection conn = DriverManager.getConnection(clickHouseUrl);
+                     Statement stmt = conn.createStatement();
+                     ResultSet rs = stmt.executeQuery("SELECT 1")) {
+                    if (rs.next()) {
+                        System.out.println("ClickHouse is ready for JDBC connections");
+                        return;
+                    }
+                }
+            } catch (Exception e) {
+                if (attempt < maxAttempts - 1) {
+                    System.out.println("Waiting for ClickHouse to be ready (attempt " + (attempt + 1) + "/" + maxAttempts + "): " + e.getMessage());
+                    Thread.sleep(2000); // Wait 2 seconds before retrying
+                } else {
+                    System.err.println("ClickHouse did not become ready for JDBC connections after " + maxAttempts + " attempts");
+                    throw new RuntimeException("ClickHouse did not become ready for JDBC connections", e);
+                }
+            }
+        }
     }
     
     private static void setupMySQLData() throws Exception {
@@ -457,15 +491,45 @@ public class JdbcBridgeIntegrationIT {
 
         System.out.println("Connecting to ClickHouse at: " + clickHouseUrl);
 
-        try (Connection conn = DriverManager.getConnection(clickHouseUrl);
-             Statement stmt = conn.createStatement()) {
+        // Retry connection with exponential backoff
+        Connection conn = null;
+        int maxRetries = 5;
+        for (int retry = 0; retry < maxRetries; retry++) {
+            try {
+                conn = DriverManager.getConnection(clickHouseUrl);
+                break;
+            } catch (Exception e) {
+                if (retry < maxRetries - 1) {
+                    System.out.println("Connection attempt " + (retry + 1) + " failed, retrying in " + (retry + 1) + " seconds: " + e.getMessage());
+                    Thread.sleep((retry + 1) * 1000);
+                } else {
+                    throw new RuntimeException("Failed to connect to ClickHouse after " + maxRetries + " attempts", e);
+                }
+            }
+        }
+
+        try (Connection connection = conn; Statement stmt = connection.createStatement()) {
 
             // Test 1: Query using jdbc() with SQL query syntax
             // Syntax: jdbc('named_datasource', 'sql query')
             System.out.println("Testing jdbc() table function with SQL query...");
             String query1 = "SELECT * FROM jdbc('mysql', 'SELECT * FROM test_table ORDER BY id')";
 
-            ResultSet rs1 = stmt.executeQuery(query1);
+            // Retry query execution with exponential backoff
+            ResultSet rs1 = null;
+            for (int retry = 0; retry < maxRetries; retry++) {
+                try {
+                    rs1 = stmt.executeQuery(query1);
+                    break;
+                } catch (Exception e) {
+                    if (retry < maxRetries - 1) {
+                        System.out.println("Query attempt " + (retry + 1) + " failed, retrying in " + (retry + 1) + " seconds: " + e.getMessage());
+                        Thread.sleep((retry + 1) * 1000);
+                    } else {
+                        throw new RuntimeException("Failed to execute query after " + maxRetries + " attempts", e);
+                    }
+                }
+            }
             List<String> results1 = new ArrayList<>();
             while (rs1.next()) {
                 int id = rs1.getInt("id");
