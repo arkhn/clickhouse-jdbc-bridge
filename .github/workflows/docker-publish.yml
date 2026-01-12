@@ -31,6 +31,36 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Download release artifacts
+        run: |
+          # Ensure directory exists
+          mkdir -p docker-artifacts
+          # Download artifacts from GitHub release with retry
+          max_attempts=5
+          attempt=1
+          while [ $attempt -le $max_attempts ]; do
+            echo "Attempt $attempt to download artifacts..."
+            if wget -q -P docker-artifacts \
+              https://github.com/${{ github.repository }}/releases/download/v${{ env.VERSION }}/LICENSE \
+              https://github.com/${{ github.repository }}/releases/download/v${{ env.VERSION }}/NOTICE \
+              https://github.com/${{ github.repository }}/releases/download/v${{ env.VERSION }}/clickhouse-jdbc-bridge-${{ env.VERSION }}-shaded.jar; then
+              echo "Artifacts downloaded successfully"
+              # Rename JAR to expected name for Dockerfile
+              mv docker-artifacts/clickhouse-jdbc-bridge-${{ env.VERSION }}-shaded.jar docker-artifacts/clickhouse-jdbc-bridge-shaded.jar
+              # List downloaded files for verification
+              ls -la docker-artifacts/
+              break
+            else
+              if [ $attempt -eq $max_attempts ]; then
+                echo "Failed to download artifacts after $max_attempts attempts"
+                exit 1
+              fi
+              echo "Waiting 10 seconds before retry..."
+              sleep 10
+              attempt=$((attempt + 1))
+            fi
+          done
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 

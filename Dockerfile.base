@@ -35,25 +35,46 @@ ENV JDBC_BRIDGE_HOME=/app JDBC_BRIDGE_VERSION=${revision} \
 LABEL app_name="ClickHouse JDBC Bridge" app_version="$JDBC_BRIDGE_VERSION" variant="base"
 
 # Update system and install additional packages for troubleshooting
-# Download only the bridge JAR (no drivers)
 RUN apt-get update \
 	&& DEBIAN_FRONTEND=noninteractive apt-get install -y --allow-unauthenticated apache2-utils \
 		apt-transport-https curl htop iftop iptraf iputils-ping jq lsof net-tools tzdata wget \
 	&& apt-get clean \
-	&& if [ "$revision" = "latest" ] ; then export JDBC_BRIDGE_VERSION=$(curl -s https://repo1.maven.org/maven2/com/clickhouse/clickhouse-jdbc-bridge/maven-metadata.xml | grep '<latest>' | sed -e 's|^.*>\(.*\)<.*$|\1|'); else export JDBC_BRIDGE_VERSION=${revision}; fi \
-	&& mkdir -p $JDBC_BRIDGE_HOME/drivers \
-	&& export JDBC_BRIDGE_REL_URL=$JDBC_BRIDGE_REL_URL/v$JDBC_BRIDGE_VERSION \
-	&& wget -q -P $JDBC_BRIDGE_HOME $JDBC_BRIDGE_REL_URL/LICENSE $JDBC_BRIDGE_REL_URL/NOTICE \
-		$JDBC_BRIDGE_REL_URL/clickhouse-jdbc-bridge-${JDBC_BRIDGE_VERSION}-shaded.jar \
-	&& ln -s $JDBC_BRIDGE_HOME/clickhouse-jdbc-bridge-${JDBC_BRIDGE_VERSION}-shaded.jar $JDBC_BRIDGE_HOME/clickhouse-jdbc-bridge-shaded.jar \
 	&& rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
+# Copy artifacts from build context (downloaded in CI)
+# The docker-artifacts directory is created by the CI workflow
+COPY --chown=root:root docker-artifacts/ $JDBC_BRIDGE_HOME/
+
+# Download artifacts from GitHub releases if not already copied from build context
+# Determine version: use revision if not "latest", otherwise fetch from Maven metadata
+RUN mkdir -p $JDBC_BRIDGE_HOME/drivers \
+	&& if [ ! -f "$JDBC_BRIDGE_HOME/LICENSE" ] || [ ! -f "$JDBC_BRIDGE_HOME/NOTICE" ] || [ ! -f "$JDBC_BRIDGE_HOME/clickhouse-jdbc-bridge-shaded.jar" ]; then \
+		if [ "$revision" = "latest" ]; then \
+			export JDBC_BRIDGE_VERSION=$(curl -s https://repo1.maven.org/maven2/com/clickhouse/clickhouse-jdbc-bridge/maven-metadata.xml | grep '<latest>' | sed -e 's|^.*>\(.*\)<.*$|\1|'); \
+		else \
+			export JDBC_BRIDGE_VERSION=${revision}; \
+		fi && \
+		export JDBC_BRIDGE_REL_URL=$JDBC_BRIDGE_REL_URL/v$JDBC_BRIDGE_VERSION && \
+		wget -q -P $JDBC_BRIDGE_HOME $JDBC_BRIDGE_REL_URL/LICENSE $JDBC_BRIDGE_REL_URL/NOTICE \
+			$JDBC_BRIDGE_REL_URL/clickhouse-jdbc-bridge-${JDBC_BRIDGE_VERSION}-shaded.jar && \
+		ln -sf $JDBC_BRIDGE_HOME/clickhouse-jdbc-bridge-${JDBC_BRIDGE_VERSION}-shaded.jar $JDBC_BRIDGE_HOME/clickhouse-jdbc-bridge-shaded.jar; \
+	fi && \
+	# Ensure symlink exists if JAR was copied from build context with versioned name
+	if [ -f "$JDBC_BRIDGE_HOME/clickhouse-jdbc-bridge-shaded.jar" ] && [ ! -L "$JDBC_BRIDGE_HOME/clickhouse-jdbc-bridge-shaded.jar" ]; then \
+		:; \
+	elif [ ! -L "$JDBC_BRIDGE_HOME/clickhouse-jdbc-bridge-shaded.jar" ]; then \
+		JDBC_BRIDGE_JAR=$(ls $JDBC_BRIDGE_HOME/clickhouse-jdbc-bridge-*-shaded.jar 2>/dev/null | head -1) && \
+		if [ -n "$JDBC_BRIDGE_JAR" ] && [ "$JDBC_BRIDGE_JAR" != "$JDBC_BRIDGE_HOME/clickhouse-jdbc-bridge-shaded.jar" ]; then \
+			ln -sf "$JDBC_BRIDGE_JAR" $JDBC_BRIDGE_HOME/clickhouse-jdbc-bridge-shaded.jar; \
+		fi; \
+	fi
 
 COPY --chown=root:root docker/ $JDBC_BRIDGE_HOME
 
 RUN chmod +x $JDBC_BRIDGE_HOME/*.sh \
 	&& mkdir -p $JDBC_BRIDGE_HOME/logs /usr/local/lib/java \
 	&& ln -s $JDBC_BRIDGE_HOME/logs /var/log/clickhouse-jdbc-bridge \
-	&& ln -s $JDBC_BRIDGE_HOME/clickhouse-jdbc-bridge-${JDBC_BRIDGE_VERSION}-shaded.jar \
+	&& ln -sf $JDBC_BRIDGE_HOME/clickhouse-jdbc-bridge-shaded.jar \
 		/usr/local/lib/java/clickhouse-jdbc-bridge-shaded.jar \
 	&& ln -s $JDBC_BRIDGE_HOME /etc/clickhouse-jdbc-bridge
 
