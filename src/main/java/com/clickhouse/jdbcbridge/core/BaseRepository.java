@@ -219,7 +219,27 @@ public abstract class BaseRepository<T extends ManagedEntity> implements Reposit
 
                 atomicAdd(entity);
             } catch (RuntimeException e) {
-                log.warn("Failed to add " + getEntityName() + "(id=" + id + ")", e);
+                System.err.println("==================== FAILED TO ADD ENTITY (RuntimeException) ====================");
+                System.err.println("Entity Type: " + getEntityName());
+                System.err.println("Entity ID: " + id);
+                System.err.println("Config: " + config);
+                System.err.println("Error Type: " + e.getClass().getName());
+                System.err.println("Error Message: " + e.getMessage());
+                System.err.println("Full Stack Trace:");
+                e.printStackTrace(System.err);
+                System.err.println("=================================================================================");
+                log.error("Failed to add {}(id={}). Error: {}", getEntityName(), id, e.getMessage(), e);
+            } catch (Exception e) {
+                System.err.println("==================== FAILED TO ADD ENTITY (Exception) ====================");
+                System.err.println("Entity Type: " + getEntityName());
+                System.err.println("Entity ID: " + id);
+                System.err.println("Config: " + config);
+                System.err.println("Error Type: " + e.getClass().getName());
+                System.err.println("Error Message: " + e.getMessage());
+                System.err.println("Full Stack Trace:");
+                e.printStackTrace(System.err);
+                System.err.println("===========================================================================");
+                log.error("Failed to add {}(id={}). Error: {}", getEntityName(), id, e.getMessage(), e);
             }
         }
     }

@@ -656,6 +656,13 @@
                                 <exclude>META-INF/*.xml</exclude>
                             </excludes>
                         </filter>
+                        <!-- Exclude dnsjava's InetAddressResolverProvider service as it causes issues when shaded -->
+                        <filter>
+                            <artifact>dnsjava:dnsjava</artifact>
+                            <excludes>
+                                <exclude>META-INF/services/java.net.spi.InetAddressResolverProvider</exclude>
+                            </excludes>
+                        </filter>
                     </filters>
                 </configuration>
                 <executions>

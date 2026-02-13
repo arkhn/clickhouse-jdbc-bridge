@@ -213,7 +213,19 @@ public final class Extension<T> {
                     try {
                         return (T) matchedConstructor.newInstance(args);
                     } catch (Exception e) {
+                        System.err.println("==================== EXTENSION CONSTRUCTOR INVOCATION FAILED ====================");
+                        System.err.println("Extension Class: " + extClass);
+                        System.err.println("Constructor: " + matchedConstructor);
+                        System.err.println("Args: " + java.util.Arrays.toString(args));
+                        System.err.println("Exception: " + e.getClass().getName() + ": " + e.getMessage());
+                        System.err.println("Root cause:");
                         Throwable rootCause = e.getCause();
+                        if (rootCause != null) {
+                            rootCause.printStackTrace(System.err);
+                        } else {
+                            e.printStackTrace(System.err);
+                        }
+                        System.err.println("=================================================================================");
                         throw new IllegalArgumentException("Failed to create instance from extension: " + extClass,
                                 rootCause == null ? e : rootCause);
                     }
@@ -223,7 +235,19 @@ public final class Extension<T> {
             try {
                 return (T) this.newMethod.invoke(null, new Object[] { args });
             } catch (Exception e) {
+                System.err.println("==================== EXTENSION METHOD INVOCATION FAILED ====================");
+                System.err.println("Extension Class: " + extClass);
+                System.err.println("Method: " + this.newMethod);
+                System.err.println("Args: " + java.util.Arrays.toString(args));
+                System.err.println("Exception: " + e.getClass().getName() + ": " + e.getMessage());
+                System.err.println("Root cause:");
                 Throwable rootCause = e.getCause();
+                if (rootCause != null) {
+                    rootCause.printStackTrace(System.err);
+                } else {
+                    e.printStackTrace(System.err);
+                }
+                System.err.println("=============================================================================");
                 throw new IllegalStateException("Failed to create instance from extension: " + extClass,
                         rootCause == null ? e : rootCause);
             }

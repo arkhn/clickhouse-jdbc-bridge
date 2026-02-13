@@ -39,6 +39,7 @@ import com.clickhouse.jdbcbridge.core.Repository;
 import com.clickhouse.jdbcbridge.core.RepositoryManager;
 import com.clickhouse.jdbcbridge.core.ResponseWriter;
 import com.clickhouse.jdbcbridge.core.TableDefinition;
+import com.clickhouse.jdbcbridge.core.UsageStats;
 import com.clickhouse.jdbcbridge.core.Utils;
 import com.clickhouse.jdbcbridge.impl.ConfigDataSource;
 import com.clickhouse.jdbcbridge.impl.JdbcDataSource;
@@ -248,6 +249,8 @@ public class JdbcBridgeVerticle extends AbstractVerticle implements ExtensionMan
         long requestTimeout = bridgeServerConfig.getLong("requestTimeout", 5000L);
         long queryTimeout = Math.max(requestTimeout, bridgeServerConfig.getLong("queryTimeout", 60000L));
 
+        log.info("Configured timeouts - Request: {}ms, Query: {}ms", requestTimeout, queryTimeout);
+
         TimeoutHandler requestTimeoutHandler = TimeoutHandler.create(requestTimeout);
         TimeoutHandler queryTimeoutHandler = TimeoutHandler.create(queryTimeout);
 
@@ -322,8 +325,18 @@ public class JdbcBridgeVerticle extends AbstractVerticle implements ExtensionMan
     }
 
     private void errorHandler(RoutingContext ctx) {
-        log.error("Failed to respond", ctx.failure());
-        ctx.response().setStatusCode(500).end(ctx.failure().getMessage());
+        Throwable failure = ctx.failure();
+        int statusCode = ctx.statusCode();
+
+        if (failure != null) {
+            log.error("Failed to respond (status {}): {}", statusCode, failure.getMessage(), failure);
+            String message = failure.getMessage();
+            ctx.response().setStatusCode(statusCode > 0 ? statusCode : 500)
+                .end(message != null ? message : "Internal server error");
+        } else {
+            log.error("Failed to respond (status {}) with no exception", statusCode);
+            ctx.response().setStatusCode(statusCode > 0 ? statusCode : 500).end("Internal server error");
+        }
     }
 
     private void handlePing(RoutingContext ctx) {
@@ -346,78 +359,95 @@ public class JdbcBridgeVerticle extends AbstractVerticle implements ExtensionMan
     }
 
     private void handleColumnsInfo(RoutingContext ctx) {
-        final QueryParser parser = QueryParser.fromRequest(ctx, getDataSourceRepository());
+        try {
+            final QueryParser parser = QueryParser.fromRequest(ctx, getDataSourceRepository());
 
-        // priority: named/inline schema -> named query -> type inferring
-        TableDefinition tableDef = null;
+            // priority: named/inline schema -> named query -> type inferring
+            TableDefinition tableDef = null;
 
-        // check if we got named schema first
-        String rawSchema = parser.getRawSchema();
-        NamedSchema namedSchema = getSchemaRepository().get(rawSchema);
-        if (namedSchema == null) { // try harder as we may got an inline schema
-            String schema = parser.getNormalizedSchema();
-            if (schema.indexOf(' ') != -1) {
-                if (log.isDebugEnabled()) {
-                    log.debug("Got inline schema:\n[{}]", schema);
+            // check if we got named schema first
+            String rawSchema = parser.getRawSchema();
+            NamedSchema namedSchema = getSchemaRepository().get(rawSchema);
+            if (namedSchema == null) { // try harder as we may got an inline schema
+                String schema = parser.getNormalizedSchema();
+                if (schema.indexOf(' ') != -1) {
+                    if (log.isDebugEnabled()) {
+                        log.debug("Got inline schema:\n[{}]", schema);
+                    }
+                    tableDef = TableDefinition.fromString(schema);
                 }
-                tableDef = TableDefinition.fromString(schema);
-            }
-        } else {
-            if (log.isDebugEnabled()) {
-                log.debug("Got named schema:\n[{}]", namedSchema);
-            }
-            tableDef = namedSchema.getColumns();
-        }
-
-        String rawQuery = parser.getRawQuery();
-        log.info("Raw query:\n{}", rawQuery);
-
-        String uri = parser.getConnectionString();
-
-        QueryParameters params = parser.getQueryParameters();
-        NamedDataSource ds = getDataSource(uri, params.isDebug());
-        String dsId = uri;
-        if (ds != null) {
-            dsId = ds.getId();
-            params = ds.newQueryParameters(params);
-        }
-
-        if (tableDef == null) {
-            // even it's a named query, the column list could be empty
-            NamedQuery namedQuery = getQueryRepository().get(rawQuery);
-
-            if (namedQuery != null) {
-                if (namedSchema == null) {
-                    namedSchema = getSchemaRepository().get(namedQuery.getSchema());
-                }
-
-                tableDef = namedSchema != null ? namedSchema.getColumns() : namedQuery.getColumns();
             } else {
-                tableDef = namedSchema != null ? namedSchema.getColumns()
-                        : ds.getResultColumns(rawSchema, parser.getNormalizedQuery(), params);
+                if (log.isDebugEnabled()) {
+                    log.debug("Got named schema:\n[{}]", namedSchema);
+                }
+                tableDef = namedSchema.getColumns();
             }
-        }
 
-        List<ColumnDefinition> additionalColumns = new ArrayList<ColumnDefinition>();
-        if (params.showDatasourceColumn()) {
-            additionalColumns.add(new ColumnDefinition(TableDefinition.COLUMN_DATASOURCE, DataType.Str, true,
-                    DEFAULT_LENGTH, DEFAULT_PRECISION, DEFAULT_SCALE, null, dsId, null));
-        }
-        if (params.showCustomColumns() && ds != null) {
-            additionalColumns.addAll(ds.getCustomColumns());
-        }
+            String rawQuery = parser.getRawQuery();
+            log.info("Raw query:\n{}", rawQuery);
 
-        if (additionalColumns.size() > 0) {
-            tableDef = new TableDefinition(tableDef, true,
-                    additionalColumns.toArray(new ColumnDefinition[additionalColumns.size()]));
-        }
+            String uri = parser.getConnectionString();
 
-        String columnsInfo = tableDef.toString();
+            QueryParameters params = parser.getQueryParameters();
+            NamedDataSource ds = getDataSource(uri, params.isDebug());
+            String dsId = uri;
+            if (ds != null) {
+                dsId = ds.getId();
+                params = ds.newQueryParameters(params);
+            }
 
-        if (log.isDebugEnabled()) {
-            log.debug("Columns info:\n[{}]", columnsInfo);
+            if (tableDef == null) {
+                // even it's a named query, the column list could be empty
+                NamedQuery namedQuery = getQueryRepository().get(rawQuery);
+
+                if (namedQuery != null) {
+                    if (namedSchema == null) {
+                        namedSchema = getSchemaRepository().get(namedQuery.getSchema());
+                    }
+
+                    tableDef = namedSchema != null ? namedSchema.getColumns() : namedQuery.getColumns();
+                } else {
+                    if (namedSchema != null) {
+                        tableDef = namedSchema.getColumns();
+                    } else if (ds != null) {
+                        tableDef = ds.getResultColumns(rawSchema, parser.getNormalizedQuery(), params);
+                    } else {
+                        List<String> availableDs = getDataSourceRepository().getUsageStats().stream()
+                            .map(UsageStats::getName)
+                            .collect(java.util.stream.Collectors.toList());
+                        String errorMsg = String.format("Datasource not found: %s. Available datasources: %s",
+                            uri, availableDs);
+                        log.error(errorMsg);
+                        ctx.fail(404, new IllegalStateException(errorMsg));
+                        return;
+                    }
+                }
+            }
+
+            List<ColumnDefinition> additionalColumns = new ArrayList<ColumnDefinition>();
+            if (params.showDatasourceColumn()) {
+                additionalColumns.add(new ColumnDefinition(TableDefinition.COLUMN_DATASOURCE, DataType.Str, true,
+                        DEFAULT_LENGTH, DEFAULT_PRECISION, DEFAULT_SCALE, null, dsId, null));
+            }
+            if (params.showCustomColumns() && ds != null) {
+                additionalColumns.addAll(ds.getCustomColumns());
+            }
+
+            if (additionalColumns.size() > 0) {
+                tableDef = new TableDefinition(tableDef, true,
+                        additionalColumns.toArray(new ColumnDefinition[additionalColumns.size()]));
+            }
+
+            String columnsInfo = tableDef.toString();
+
+            if (log.isDebugEnabled()) {
+                log.debug("Columns info:\n[{}]", columnsInfo);
+            }
+            ctx.response().end(ByteBuffer.asBuffer(columnsInfo));
+        } catch (Exception e) {
+            log.error("Exception in handleColumnsInfo", e);
+            ctx.fail(e);
         }
-        ctx.response().end(ByteBuffer.asBuffer(columnsInfo));
     }
 
     private void handleIdentifierQuote(RoutingContext ctx) {

@@ -294,10 +294,33 @@ public class JdbcDataSource extends NamedDataSource {
         Repository<NamedDataSource> manager = (Repository<NamedDataSource>) Objects.requireNonNull(args[1]);
         JsonObject config = args.length > 2 ? (JsonObject) args[2] : null;
 
-        JdbcDataSource ds = new JdbcDataSource(id, manager, config);
-        ds.validate();
+        System.err.println("==================== CREATING JDBC DATASOURCE ====================");
+        System.err.println("ID: " + id);
+        System.err.println("Config: " + config);
+        System.err.println("==================================================================");
+        log.info("Creating JdbcDataSource with id={}, config={}", id, config);
 
-        return ds;
+        try {
+            JdbcDataSource ds = new JdbcDataSource(id, manager, config);
+            System.err.println("Constructor completed for id=" + id);
+            log.info("JdbcDataSource constructor completed for id={}", id);
+            ds.validate();
+            System.err.println("Validation completed for id=" + id);
+            log.info("JdbcDataSource validation completed for id={}", id);
+            return ds;
+        } catch (Throwable e) {
+            System.err.println("==================== JDBC DATASOURCE CREATION FAILED ====================");
+            System.err.println("ID: " + id);
+            System.err.println("Config: " + config);
+            System.err.println("Error Type: " + e.getClass().getName());
+            System.err.println("Error Message: " + e.getMessage());
+            System.err.println("Stack trace:");
+            e.printStackTrace(System.err);
+            System.err.println("=========================================================================");
+            log.error("Failed to create JdbcDataSource with id={}, config={}. Error: {}",
+                id, config, e.getMessage(), e);
+            throw e;
+        }
     }
 
     private final String jdbcUrl;
@@ -363,14 +386,17 @@ public class JdbcDataSource extends NamedDataSource {
 
     protected JdbcDataSource(String id, Repository<NamedDataSource> resolver, JsonObject config) {
         super(id, resolver, config);
+        log.debug("JdbcDataSource constructor started for id={}", id);
 
         Properties props = new Properties();
         props.putAll(DEFAULT_DATASOURCE_PROPERTIES);
 
         if (id != null && id.startsWith(EXTENSION_NAME) && config == null) { // adhoc
+            log.debug("Creating adhoc datasource for id={}", id);
             this.jdbcUrl = id;
             this.datasource = null;
         } else { // named
+            log.debug("Creating named datasource for id={}", id);
             if (config != null) {
                 for (Entry<String, Object> field : config) {
                     String key = field.getKey();
@@ -413,15 +439,20 @@ public class JdbcDataSource extends NamedDataSource {
             this.jdbcUrl = null;
 
             if (USE_CUSTOM_DRIVER_LOADER) {
+                log.debug("Using custom driver loader for id={}", id);
                 String driverClassName = props.getProperty(PROP_DRIVER_CLASS);
 
                 if (driverClassName == null || driverClassName.isEmpty()) {
                     String url = props.getProperty(CONF_JDBC_URL);
+                    log.debug("jdbcUrl from config: {}", url);
                     if (url == null || url.isEmpty()) {
+                        log.error("jdbcUrl was not specified for datasource id={}", id);
                         throw new IllegalArgumentException(CONF_JDBC_URL + " was not specified!");
                     }
 
+                    log.debug("Finding driver for URL: {}", url);
                     props.setProperty(PROP_DRIVER_CLASS, driverClassName = findDriver(url).getClass().getName());
+                    log.debug("Found driver: {}", driverClassName);
                 }
 
                 // in case there's any driver in classpath was loaded, which might not be the
@@ -432,20 +463,48 @@ public class JdbcDataSource extends NamedDataSource {
                 ClassLoader currentContextClassLoader = currentThread.getContextClassLoader();
 
                 try {
+                    log.debug("Setting up HikariCP for datasource id={}", id);
                     ClassLoader loader = this.getDriverClassLoader();
                     currentThread.setContextClassLoader(loader);
 
                     // FIXME not thread-safe
                     HikariConfig conf = new HikariConfig(props);
                     conf.setMetricRegistry(Utils.getDefaultMetricRegistry());
+                    log.debug("Creating HikariDataSource for id={}", id);
                     this.datasource = new HikariDataSource(conf);
+                    log.debug("HikariDataSource created successfully for id={}", id);
+                } catch (Exception e) {
+                    System.err.println("==================== HIKARICP INIT FAILED ====================");
+                    System.err.println("Datasource ID: " + id);
+                    System.err.println("Properties: " + props);
+                    System.err.println("Error: " + e.getClass().getName() + ": " + e.getMessage());
+                    e.printStackTrace(System.err);
+                    System.err.println("==============================================================");
+                    log.error("Failed to initialize HikariCP for datasource id={}. Properties: {}. Error: {}",
+                        id, props, e.getMessage(), e);
+                    throw e;
                 } finally {
                     currentThread.setContextClassLoader(currentContextClassLoader);
                 }
             } else {
-                HikariConfig conf = new HikariConfig(props);
-                conf.setMetricRegistry(Utils.getDefaultMetricRegistry());
-                this.datasource = new HikariDataSource(conf);
+                log.debug("Using standard driver loader for id={}", id);
+                try {
+                    HikariConfig conf = new HikariConfig(props);
+                    conf.setMetricRegistry(Utils.getDefaultMetricRegistry());
+                    log.debug("Creating HikariDataSource for id={}", id);
+                    this.datasource = new HikariDataSource(conf);
+                    log.debug("HikariDataSource created successfully for id={}", id);
+                } catch (Exception e) {
+                    System.err.println("==================== HIKARICP INIT FAILED ====================");
+                    System.err.println("Datasource ID: " + id);
+                    System.err.println("Properties: " + props);
+                    System.err.println("Error: " + e.getClass().getName() + ": " + e.getMessage());
+                    e.printStackTrace(System.err);
+                    System.err.println("==============================================================");
+                    log.error("Failed to initialize HikariCP for datasource id={}. Properties: {}. Error: {}",
+                        id, props, e.getMessage(), e);
+                    throw e;
+                }
             }
         }
     }
