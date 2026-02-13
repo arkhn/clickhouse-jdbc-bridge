@@ -22,13 +22,11 @@ start_server() {
 
 	if [ "$(echo ${CUSTOM_DRIVER_LOADER:="true"} | tr '[:upper:]' '[:lower:]')" != "true" ]; then
 		local classpath="./clickhouse-jdbc-bridge-shaded.jar:$(echo $(ls ${DRIVER_DIR:="drivers"}/*.jar) | tr ' ' ':'):."
-		java -XX:+UseContainerSupport -XX:+IdleTuningCompactOnIdle -XX:+IdleTuningGcOnIdle \
-			-Xdump:none -Xdump:tool:events=systhrow+throw,filter=*OutOfMemoryError,exec="kill -9 %pid" \
+		java -XX:+UseContainerSupport -XX:+ExitOnOutOfMemoryError \
 			-Djava.util.logging.config.file=$JDBC_BRIDGE_HOME/logging.properties -Dnashorn.args=--language=es6 \
 			${JDBC_BRIDGE_JVM_OPTS:=""} -cp $classpath com.clickhouse.jdbcbridge.JdbcBridgeVerticle
 	else
-		java -XX:+UseContainerSupport -XX:+IdleTuningCompactOnIdle -XX:+IdleTuningGcOnIdle \
-			-Xdump:none -Xdump:tool:events=systhrow+throw,filter=*OutOfMemoryError,exec="kill -9 %pid" \
+		java -XX:+UseContainerSupport -XX:+ExitOnOutOfMemoryError \
 			-Djava.util.logging.config.file=$JDBC_BRIDGE_HOME/logging.properties -Dnashorn.args=--language=es6 \
 			${JDBC_BRIDGE_JVM_OPTS:=""} -jar clickhouse-jdbc-bridge-shaded.jar
 	fi

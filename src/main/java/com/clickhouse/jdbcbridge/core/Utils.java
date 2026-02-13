@@ -39,8 +39,8 @@ import javax.script.Bindings;
 import com.fasterxml.jackson.core.io.JsonStringEncoder;
 
 import io.micrometer.core.instrument.MeterRegistry;
-import io.micrometer.prometheusmetrics.PrometheusConfig;
-import io.micrometer.prometheusmetrics.PrometheusMeterRegistry;
+import io.micrometer.prometheus.PrometheusConfig;
+import io.micrometer.prometheus.PrometheusMeterRegistry;
 import io.vertx.core.json.JsonObject;
 
 /**

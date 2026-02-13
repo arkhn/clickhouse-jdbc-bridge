@@ -18,41 +18,58 @@
 # specific language governing permissions and limitations
 # under the License.
 
-# Base image: Contains only the JDBC Bridge without any drivers
+# Build stage: Compile the project
+FROM eclipse-temurin:25-jammy AS builder
+
+ARG revision=2.1.0-SNAPSHOT
+
+WORKDIR /build
+
+# Copy Maven files first for better layer caching
+COPY pom.xml ./
+COPY src ./src
+COPY misc ./misc
+COPY LICENSE NOTICE ./
+
+# Build the project
+RUN apt-get update \
+	&& apt-get install -y maven \
+	&& mvn clean package -DskipTests -Dnotice.skip=true -Dlicense.skip=true \
+	&& apt-get clean \
+	&& rm -rf /var/lib/apt/lists/*
+
+# Runtime stage: Base image contains only the JDBC Bridge without any drivers
 FROM eclipse-temurin:25-jre-jammy
 
-ARG revision=latest
-ARG repository=arkhn/clickhouse-jdbc-bridge
+ARG revision=2.1.0-SNAPSHOT
 
 # Maintainer
 LABEL maintainer="infra@arkhn.com"
 
 # Environment variables
-ENV JDBC_BRIDGE_HOME=/app JDBC_BRIDGE_VERSION=${revision} \
-	JDBC_BRIDGE_REL_URL=https://github.com/${repository}/releases/download
+ENV JDBC_BRIDGE_HOME=/app JDBC_BRIDGE_VERSION=${revision}
 
 # Labels
 LABEL app_name="ClickHouse JDBC Bridge" app_version="$JDBC_BRIDGE_VERSION" variant="base"
 
 # Update system and install additional packages for troubleshooting
-# Download only the bridge JAR (no drivers)
 RUN apt-get update \
 	&& DEBIAN_FRONTEND=noninteractive apt-get install -y --allow-unauthenticated apache2-utils \
 		apt-transport-https curl htop iftop iptraf iputils-ping jq lsof net-tools tzdata wget \
 	&& apt-get clean \
-	&& if [ "$revision" = "latest" ] ; then export JDBC_BRIDGE_VERSION=$(curl -s https://repo1.maven.org/maven2/com/clickhouse/clickhouse-jdbc-bridge/maven-metadata.xml | grep '<latest>' | sed -e 's|^.*>\(.*\)<.*$|\1|'); else export JDBC_BRIDGE_VERSION=${revision}; fi \
 	&& mkdir -p $JDBC_BRIDGE_HOME/drivers \
-	&& export JDBC_BRIDGE_REL_URL=$JDBC_BRIDGE_REL_URL/v$JDBC_BRIDGE_VERSION \
-	&& wget -q -P $JDBC_BRIDGE_HOME $JDBC_BRIDGE_REL_URL/LICENSE $JDBC_BRIDGE_REL_URL/NOTICE \
-		$JDBC_BRIDGE_REL_URL/clickhouse-jdbc-bridge-${JDBC_BRIDGE_VERSION}-shaded.jar \
-	&& ln -s $JDBC_BRIDGE_HOME/clickhouse-jdbc-bridge-${JDBC_BRIDGE_VERSION}-shaded.jar $JDBC_BRIDGE_HOME/clickhouse-jdbc-bridge-shaded.jar \
 	&& rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
+# Copy the JAR from builder stage
+COPY --from=builder --chown=root:root /build/target/clickhouse-jdbc-bridge-${revision}-shaded.jar $JDBC_BRIDGE_HOME/
+COPY --chown=root:root LICENSE NOTICE $JDBC_BRIDGE_HOME/
 COPY --chown=root:root docker/ $JDBC_BRIDGE_HOME
 
 RUN chmod +x $JDBC_BRIDGE_HOME/*.sh \
 	&& mkdir -p $JDBC_BRIDGE_HOME/logs /usr/local/lib/java \
 	&& ln -s $JDBC_BRIDGE_HOME/logs /var/log/clickhouse-jdbc-bridge \
+	&& ln -s $JDBC_BRIDGE_HOME/clickhouse-jdbc-bridge-${JDBC_BRIDGE_VERSION}-shaded.jar \
+		$JDBC_BRIDGE_HOME/clickhouse-jdbc-bridge-shaded.jar \
 	&& ln -s $JDBC_BRIDGE_HOME/clickhouse-jdbc-bridge-${JDBC_BRIDGE_VERSION}-shaded.jar \
 		/usr/local/lib/java/clickhouse-jdbc-bridge-shaded.jar \
 	&& ln -s $JDBC_BRIDGE_HOME /etc/clickhouse-jdbc-bridge

@@ -62,15 +62,14 @@ This project includes:
   Netty/Transport under Apache License, Version 2.0
   Netty/Transport/Native/Unix/Common under Apache License, Version 2.0
   ojdbc8 under Oracle Free Use Terms and Conditions (FUTC)
-  Prometheus Metrics Config under The Apache Software License, Version 2.0
-  Prometheus Metrics Core under The Apache Software License, Version 2.0
-  Prometheus Metrics Exposition Formats under The Apache Software License, Version 2.0
-  Prometheus Metrics Model under The Apache Software License, Version 2.0
-  Prometheus Metrics Tracer Common under The Apache Software License, Version 2.0
+  Prometheus Java Simpleclient under The Apache Software License, Version 2.0
+  Prometheus Java Simpleclient Common under The Apache Software License, Version 2.0
+  Prometheus Java Span Context Supplier - Common under The Apache Software License, Version 2.0
+  Prometheus Java Span Context Supplier - OpenTelemetry under The Apache Software License, Version 2.0
+  Prometheus Java Span Context Supplier - OpenTelemetry Agent under The Apache Software License, Version 2.0
   Protocol Buffers [Core] under BSD-3-Clause
   rhino under Mozilla Public License, Version 2.0
   rhino-engine under Mozilla Public License, Version 2.0
-  Shaded Protobuf under The Apache Software License, Version 2.0
   SLF4J API Module under MIT License
   SLF4J JDK14 Provider under MIT License
   Testcontainers :: Database-Commons under MIT
