@@ -298,6 +298,10 @@ public class JdbcBridgeVerticle extends AbstractVerticle implements ExtensionMan
         // log.trace("[{}] Body:\n{}", path, ctx.getBodyAsString());
         // }
 
+        // Disable Range requests to prevent HTTP 416 errors on large datasets
+        // The bridge streams JDBC results and cannot serve arbitrary byte ranges
+        ctx.response().putHeader("Accept-Ranges", "none");
+
         ctx.response().endHandler(handler -> {
             if (log.isTraceEnabled()) {
                 log.trace("[{}] About to end response...", ctx.normalizedPath());
