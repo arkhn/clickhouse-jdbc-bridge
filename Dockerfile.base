@@ -49,6 +49,11 @@ LABEL maintainer="infra@arkhn.com"
 # Environment variables
 ENV JDBC_BRIDGE_HOME=/app JDBC_BRIDGE_VERSION=${revision}
 
+# Use a single shared classloader that includes every jar in $JDBC_BRIDGE_HOME/drivers/.
+# Default upstream behaviour ("true") requires each datasource to declare its own
+# driverUrls; flipping this lets datasources rely on jars dropped into the drivers dir.
+ENV CUSTOM_DRIVER_LOADER=false
+
 # Labels
 LABEL app_name="ClickHouse JDBC Bridge" app_version="$JDBC_BRIDGE_VERSION" variant="base"
 

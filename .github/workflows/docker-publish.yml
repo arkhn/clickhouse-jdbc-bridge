@@ -15,6 +15,11 @@ on:
         description: "Patch"
         required: false
         default: "0"
+      tag_latest:
+        description: "Also push :latest / :base / :full mutable tags"
+        required: false
+        default: true
+        type: boolean
   workflow_call:
     inputs:
       major:
@@ -31,10 +36,15 @@ on:
         required: false
         type: string
         default: "0"
+      tag_latest:
+        description: "Also push :latest / :base / :full mutable tags"
+        required: false
+        type: boolean
+        default: true
 
 env:
   REGISTRY_IMAGE: arkhn/clickhouse-jdbc-bridge
-  VERSION: ${{ inputs.major || github.event.inputs.major }}.${{ inputs.minor || github.event.inputs.minor }}.${{ inputs.patch || github.event.inputs.patch }}
+  VERSION: ${{ inputs.major }}.${{ inputs.minor }}.${{ inputs.patch }}
 
 jobs:
   build-base:
@@ -56,18 +66,32 @@ jobs:
           username: ${{ secrets.DOCKER_LOGIN }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
+      - name: Compute base tags
+        id: base_tags
+        run: |
+          TAGS="${{ env.REGISTRY_IMAGE }}:v${{ env.VERSION }}-base"
+          TAGS="${TAGS},${{ env.REGISTRY_IMAGE }}:v${{ inputs.major }}.${{ inputs.minor }}-base"
+          TAGS="${TAGS},${{ env.REGISTRY_IMAGE }}:v${{ inputs.major }}-base"
+          if [ "${{ inputs.tag_latest }}" = "true" ]; then
+            TAGS="${TAGS},${{ env.REGISTRY_IMAGE }}:base"
+          fi
+          echo "tags=${TAGS}" >> "$GITHUB_OUTPUT"
+
       - name: Build and Push Base Image
         uses: docker/build-push-action@v5
         with:
           context: .
           file: ./Dockerfile.base
           push: true
+          platforms: linux/amd64
           build-args: |
             revision=${{ env.VERSION }}
             repository=${{ github.repository }}
-          tags: |
-            ${{ env.REGISTRY_IMAGE }}:base
-            ${{ env.REGISTRY_IMAGE }}:v${{ env.VERSION }}-base
+          tags: ${{ steps.base_tags.outputs.tags }}
+          cache-from: type=gha,scope=base
+          cache-to: type=gha,mode=max,scope=base
+          sbom: true
+          provenance: mode=max
 
   build-full:
     name: "Build and Push Full Image"
@@ -89,14 +113,32 @@ jobs:
           username: ${{ secrets.DOCKER_LOGIN }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
+      - name: Compute full tags
+        id: full_tags
+        run: |
+          TAGS="${{ env.REGISTRY_IMAGE }}:v${{ env.VERSION }}-full"
+          TAGS="${TAGS},${{ env.REGISTRY_IMAGE }}:v${{ env.VERSION }}"
+          TAGS="${TAGS},${{ env.REGISTRY_IMAGE }}:v${{ inputs.major }}.${{ inputs.minor }}-full"
+          TAGS="${TAGS},${{ env.REGISTRY_IMAGE }}:v${{ inputs.major }}.${{ inputs.minor }}"
+          TAGS="${TAGS},${{ env.REGISTRY_IMAGE }}:v${{ inputs.major }}-full"
+          TAGS="${TAGS},${{ env.REGISTRY_IMAGE }}:v${{ inputs.major }}"
+          if [ "${{ inputs.tag_latest }}" = "true" ]; then
+            TAGS="${TAGS},${{ env.REGISTRY_IMAGE }}:full"
+            TAGS="${TAGS},${{ env.REGISTRY_IMAGE }}:latest"
+          fi
+          echo "tags=${TAGS}" >> "$GITHUB_OUTPUT"
+
       - name: Build and Push Full Image
         uses: docker/build-push-action@v5
         with:
           context: .
           file: ./Dockerfile
           push: true
+          platforms: linux/amd64
           build-args: |
             BASE_IMAGE=${{ env.REGISTRY_IMAGE }}:v${{ env.VERSION }}-base
-          tags: |
-            ${{ env.REGISTRY_IMAGE }}:full
-            ${{ env.REGISTRY_IMAGE }}:v${{ env.VERSION }}-full
+          tags: ${{ steps.full_tags.outputs.tags }}
+          cache-from: type=gha,scope=full
+          cache-to: type=gha,mode=max,scope=full
+          sbom: true
+          provenance: mode=max

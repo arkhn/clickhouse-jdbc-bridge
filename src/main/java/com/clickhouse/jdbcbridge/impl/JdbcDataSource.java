@@ -28,7 +28,9 @@ import java.sql.Statement;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Enumeration;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Properties;
 import java.util.ServiceLoader;
@@ -65,6 +67,41 @@ public class JdbcDataSource extends NamedDataSource {
     private static final Set<String> PRIVATE_PROPS = Collections
             .unmodifiableSet(new HashSet<>(Arrays.asList(CONF_SCHEMA, CONF_TYPE, CONF_TIMEZONE, CONF_CACHE,
                     CONF_ALIASES, CONF_DRIVER_URLS, CONF_QUERY_TIMEOUT, CONF_WRITE_TIMEOUT, CONF_SEALED)));
+
+    // Legacy / non-canonical key names accepted from datasource JSON and translated
+    // to the HikariCP setter name before HikariConfig construction. This lets existing
+    // configs (some authored against the Yandex bridge or hand-written) keep working
+    // without per-datasource edits.
+    private static final Map<String, String> HIKARI_PROP_ALIASES;
+
+    // Snapshot of HikariConfig setter names; used to drop unknown top-level properties
+    // before passing them to HikariCP, which otherwise throws RuntimeException
+    // ("Property X does not exist on target class HikariConfig") and fails the
+    // entire datasource registration.
+    private static final Set<String> HIKARI_PROP_NAMES;
+
+    static {
+        Map<String, String> aliases = new HashMap<>();
+        aliases.put("driver", "driverClassName");
+        aliases.put("url", "jdbcUrl");
+        aliases.put("user", "username");
+        aliases.put("maxPoolSize", "maximumPoolSize");
+        aliases.put("minIdle", "minimumIdle");
+        HIKARI_PROP_ALIASES = Collections.unmodifiableMap(aliases);
+
+        Set<String> names;
+        try {
+            names = new HashSet<>(com.zaxxer.hikari.util.PropertyElf.getPropertyNames(HikariConfig.class));
+        } catch (Throwable t) {
+            // PropertyElf is internal to HikariCP; if signatures shift, fail open
+            // (let HikariCP make the call) rather than dropping every property.
+            org.slf4j.LoggerFactory.getLogger(JdbcDataSource.class)
+                    .warn("Could not enumerate HikariConfig setters; unknown properties will not be filtered: {}",
+                            t.getMessage());
+            names = Collections.emptySet();
+        }
+        HIKARI_PROP_NAMES = Collections.unmodifiableSet(names);
+    }
 
     private static final Properties DEFAULT_DATASOURCE_PROPERTIES = new Properties();
 
@@ -355,6 +392,27 @@ public class JdbcDataSource extends NamedDataSource {
         return err.toString();
     }
 
+    // Drop top-level properties HikariCP doesn't have a setter for so a single bad
+    // key in the datasource JSON doesn't fail registration of the whole datasource.
+    // dataSource.* and any property that maps to a HikariConfig setter (per PropertyElf)
+    // pass through unchanged.
+    private static Properties filterHikariProps(Properties source, String id) {
+        if (HIKARI_PROP_NAMES.isEmpty()) {
+            // PropertyElf introspection failed at class init - don't filter.
+            return source;
+        }
+        Properties result = new Properties();
+        for (Map.Entry<Object, Object> entry : source.entrySet()) {
+            String key = (String) entry.getKey();
+            if (key.startsWith("dataSource.") || HIKARI_PROP_NAMES.contains(key)) {
+                result.setProperty(key, (String) entry.getValue());
+            } else {
+                log.warn("Datasource id={}: ignoring unknown HikariCP property '{}'", id, key);
+            }
+        }
+        return result;
+    }
+
     protected Driver findDriver(String url) {
         ServiceLoader<Driver> loader = ServiceLoader.load(Driver.class, this.getDriverClassLoader());
         for (Driver d : loader) {
@@ -389,6 +447,21 @@ public class JdbcDataSource extends NamedDataSource {
 
                     if (PRIVATE_PROPS.contains(key)) {
                         continue;
+                    }
+
+                    // Translate legacy aliases (driver -> driverClassName, url -> jdbcUrl, ...).
+                    // If the canonical key is also present in the config, prefer it and drop
+                    // the alias to avoid non-deterministic last-write-wins behavior.
+                    String canonical = HIKARI_PROP_ALIASES.get(key);
+                    if (canonical != null) {
+                        if (config.containsKey(canonical) && !canonical.equals(key)) {
+                            log.warn(
+                                    "Datasource id={}: ignoring legacy property '{}' because canonical '{}' is also set",
+                                    id, key, canonical);
+                            continue;
+                        }
+                        log.debug("Datasource id={}: aliasing legacy property '{}' to '{}'", id, key, canonical);
+                        key = canonical;
                     }
 
                     Object value = field.getValue();
@@ -454,7 +527,7 @@ public class JdbcDataSource extends NamedDataSource {
                     currentThread.setContextClassLoader(loader);
 
                     // FIXME not thread-safe
-                    HikariConfig conf = new HikariConfig(props);
+                    HikariConfig conf = new HikariConfig(filterHikariProps(props, id));
                     conf.setMetricRegistry(Utils.getDefaultMetricRegistry());
                     log.debug("Creating HikariDataSource for id={}", id);
                     this.datasource = new HikariDataSource(conf);
@@ -469,7 +542,7 @@ public class JdbcDataSource extends NamedDataSource {
             } else {
                 log.debug("Using standard driver loader for id={}", id);
                 try {
-                    HikariConfig conf = new HikariConfig(props);
+                    HikariConfig conf = new HikariConfig(filterHikariProps(props, id));
                     conf.setMetricRegistry(Utils.getDefaultMetricRegistry());
                     log.debug("Creating HikariDataSource for id={}", id);
                     this.datasource = new HikariDataSource(conf);
