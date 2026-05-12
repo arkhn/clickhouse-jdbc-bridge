@@ -18,14 +18,91 @@
 # specific language governing permissions and limitations
 # under the License.
 
-# Full image: Extends base image with all JDBC drivers pre-installed
-ARG BASE_IMAGE=arkhn/clickhouse-jdbc-bridge:base
-FROM ${BASE_IMAGE}
+# Multi-stage build for the ClickHouse JDBC bridge.
+#   - `builder` compiles the shaded jar
+#   - `base`    minimal runtime image (no JDBC drivers vendored)
+#   - `full`    base + all JDBC drivers pre-installed (default target)
+#
+# Build the full image:
+#   docker build -t arkhn/clickhouse-jdbc-bridge:dev .
+# Build only the base image (no drivers):
+#   docker build --target base -t arkhn/clickhouse-jdbc-bridge:base .
 
-# Labels
+ARG REVISION=2.1.0-SNAPSHOT
+
+# -----------------------------------------------------------------------------
+# Stage 1/3: Compile the project
+# -----------------------------------------------------------------------------
+FROM eclipse-temurin:25-jammy AS builder
+
+ARG REVISION
+
+WORKDIR /build
+
+COPY pom.xml ./
+COPY src ./src
+COPY misc ./misc
+COPY LICENSE NOTICE ./
+
+RUN apt-get update \
+	&& apt-get install -y maven \
+	&& mvn clean package -DskipTests -Dnotice.skip=true -Dlicense.skip=true \
+	&& apt-get clean \
+	&& rm -rf /var/lib/apt/lists/*
+
+# -----------------------------------------------------------------------------
+# Stage 2/3: Base runtime image (no JDBC drivers)
+# -----------------------------------------------------------------------------
+FROM eclipse-temurin:25-jre-jammy AS base
+
+ARG REVISION
+
+LABEL maintainer="infra@arkhn.com"
+
+ENV JDBC_BRIDGE_HOME=/app JDBC_BRIDGE_VERSION=${REVISION}
+
+# Use a single shared classloader that includes every jar in $JDBC_BRIDGE_HOME/drivers/.
+# Default upstream behaviour ("true") requires each datasource to declare its own
+# driverUrls; flipping this lets datasources rely on jars dropped into the drivers dir.
+ENV CUSTOM_DRIVER_LOADER=false
+
+LABEL app_name="ClickHouse JDBC Bridge" app_version="$JDBC_BRIDGE_VERSION" variant="base"
+
+RUN apt-get update \
+	&& DEBIAN_FRONTEND=noninteractive apt-get install -y --allow-unauthenticated apache2-utils \
+		apt-transport-https curl htop iftop iptraf iputils-ping jq lsof net-tools tzdata wget \
+	&& apt-get clean \
+	&& mkdir -p $JDBC_BRIDGE_HOME/drivers \
+	&& rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
+COPY --from=builder --chown=root:root /build/target/clickhouse-jdbc-bridge-${REVISION}-shaded.jar $JDBC_BRIDGE_HOME/
+COPY --chown=root:root LICENSE NOTICE $JDBC_BRIDGE_HOME/
+COPY --chown=root:root docker/ $JDBC_BRIDGE_HOME
+
+RUN chmod +x $JDBC_BRIDGE_HOME/*.sh \
+	&& mkdir -p $JDBC_BRIDGE_HOME/logs /usr/local/lib/java \
+	&& ln -s $JDBC_BRIDGE_HOME/logs /var/log/clickhouse-jdbc-bridge \
+	&& ln -s $JDBC_BRIDGE_HOME/clickhouse-jdbc-bridge-${JDBC_BRIDGE_VERSION}-shaded.jar \
+		$JDBC_BRIDGE_HOME/clickhouse-jdbc-bridge-shaded.jar \
+	&& ln -s $JDBC_BRIDGE_HOME/clickhouse-jdbc-bridge-${JDBC_BRIDGE_VERSION}-shaded.jar \
+		/usr/local/lib/java/clickhouse-jdbc-bridge-shaded.jar \
+	&& ln -s $JDBC_BRIDGE_HOME /etc/clickhouse-jdbc-bridge
+
+WORKDIR $JDBC_BRIDGE_HOME
+
+EXPOSE 9019
+
+VOLUME ["${JDBC_BRIDGE_HOME}/drivers", "${JDBC_BRIDGE_HOME}/extensions", "${JDBC_BRIDGE_HOME}/logs", "${JDBC_BRIDGE_HOME}/scripts"]
+
+CMD "./docker-entrypoint.sh"
+
+# -----------------------------------------------------------------------------
+# Stage 3/3: Full image — base + every supported JDBC driver
+# -----------------------------------------------------------------------------
+FROM base AS full
+
 LABEL app_name="ClickHouse JDBC Bridge" variant="full"
 
-# Download all JDBC drivers
 RUN wget -P $JDBC_BRIDGE_HOME/drivers \
 	https://repo1.maven.org/maven2/com/clickhouse/clickhouse-jdbc/0.9.2/clickhouse-jdbc-0.9.2-all.jar \
 	https://repo1.maven.org/maven2/org/mariadb/jdbc/mariadb-java-client/3.5.4/mariadb-java-client-3.5.4.jar \
