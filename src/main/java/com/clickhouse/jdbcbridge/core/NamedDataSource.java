@@ -533,7 +533,7 @@ public class NamedDataSource extends ManagedEntity implements Closeable {
 
     @Override
     public void close() {
-        log.info("Closing datasource[id={}, instance={}]", this.id, this);
+        log.debug("Closing datasource[id={}, instance={}]", this.id, this);
     }
 
     public final void executeQuery(String schema, String originalQuery, String loadedQuery, TableDefinition columns,

@@ -294,29 +294,15 @@ public class JdbcDataSource extends NamedDataSource {
         Repository<NamedDataSource> manager = (Repository<NamedDataSource>) Objects.requireNonNull(args[1]);
         JsonObject config = args.length > 2 ? (JsonObject) args[2] : null;
 
-        System.err.println("==================== CREATING JDBC DATASOURCE ====================");
-        System.err.println("ID: " + id);
-        System.err.println("Config: " + config);
-        System.err.println("==================================================================");
-        log.info("Creating JdbcDataSource with id={}, config={}", id, config);
+        log.debug("Creating JdbcDataSource with id={}, config={}", id, config);
 
         try {
             JdbcDataSource ds = new JdbcDataSource(id, manager, config);
-            System.err.println("Constructor completed for id=" + id);
-            log.info("JdbcDataSource constructor completed for id={}", id);
+            log.debug("JdbcDataSource constructor completed for id={}", id);
             ds.validate();
-            System.err.println("Validation completed for id=" + id);
-            log.info("JdbcDataSource validation completed for id={}", id);
+            log.debug("JdbcDataSource validation completed for id={}", id);
             return ds;
         } catch (Throwable e) {
-            System.err.println("==================== JDBC DATASOURCE CREATION FAILED ====================");
-            System.err.println("ID: " + id);
-            System.err.println("Config: " + config);
-            System.err.println("Error Type: " + e.getClass().getName());
-            System.err.println("Error Message: " + e.getMessage());
-            System.err.println("Stack trace:");
-            e.printStackTrace(System.err);
-            System.err.println("=========================================================================");
             log.error("Failed to create JdbcDataSource with id={}, config={}. Error: {}",
                 id, config, e.getMessage(), e);
             throw e;
@@ -474,12 +460,6 @@ public class JdbcDataSource extends NamedDataSource {
                     this.datasource = new HikariDataSource(conf);
                     log.debug("HikariDataSource created successfully for id={}", id);
                 } catch (Exception e) {
-                    System.err.println("==================== HIKARICP INIT FAILED ====================");
-                    System.err.println("Datasource ID: " + id);
-                    System.err.println("Properties: " + props);
-                    System.err.println("Error: " + e.getClass().getName() + ": " + e.getMessage());
-                    e.printStackTrace(System.err);
-                    System.err.println("==============================================================");
                     log.error("Failed to initialize HikariCP for datasource id={}. Properties: {}. Error: {}",
                         id, props, e.getMessage(), e);
                     throw e;
@@ -495,12 +475,6 @@ public class JdbcDataSource extends NamedDataSource {
                     this.datasource = new HikariDataSource(conf);
                     log.debug("HikariDataSource created successfully for id={}", id);
                 } catch (Exception e) {
-                    System.err.println("==================== HIKARICP INIT FAILED ====================");
-                    System.err.println("Datasource ID: " + id);
-                    System.err.println("Properties: " + props);
-                    System.err.println("Error: " + e.getClass().getName() + ": " + e.getMessage());
-                    e.printStackTrace(System.err);
-                    System.err.println("==============================================================");
                     log.error("Failed to initialize HikariCP for datasource id={}. Properties: {}. Error: {}",
                         id, props, e.getMessage(), e);
                     throw e;
