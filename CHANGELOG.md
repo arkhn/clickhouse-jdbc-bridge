@@ -1,0 +1,23 @@
+## 1.0.0 (2026-05-12)
+
+### Bug Fixes
+
+* **ci:** packaging and shading failed fixed it with micrometer downgrade ([aa3ddba](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/aa3ddbacfe9ce83c7d306d6d5ad490462cf650a3))
+* corrupting concurrency in recent mvn versions ([27587b3](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/27587b348ce93c6f75c42ac44e4764527aa0ea9e))
+* corrupting concurrency in recent mvn versions ([bccf60e](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/bccf60e6161bbb5303a38e819a201744078fe9de))
+* **http:** HTTP 416 range failed ([1d8ee58](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/1d8ee58e3ce81daec892640999f9f8b1fce75fe5))
+* improve ClickHouse readiness checks in integration test ([38678b6](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/38678b6ae48aa7edcd4dd8741fc9f903de0b0207))
+* logs handling ([5494fd7](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/5494fd78cd7d330a1ab4c9d394afa1e4518cdde2))
+* missing http deps ([aad421d](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/aad421df73475f8080817d2b8d13f5154784b7c2))
+* release process and builds ([44e9a3a](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/44e9a3a14f4dc53ed34d2981cd8af59c811a1e64))
+* releaser ([24147a2](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/24147a2791dd4c1e99db47e68af793c8ecc439e0))
+* remaining logging and compat issues + release ([e31ed4a](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/e31ed4ac0d4483279bafaa5528716f789547e032))
+
+### Features
+
+* add base/full Docker image variants and update workflows ([1349e40](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/1349e40a1888b853900d1ffd4bce44d2d42d2528))
+* add e2e test from clickhouse to mysql ([ecb57ad](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/ecb57ada57ae3731e4d21749de03c51958b323ec))
+* add moar loads ([b9ef77a](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/b9ef77a40f50cd324acf926f290a917debf73b6f))
+* add publication of the project to Arkhn's dockerhub ([c90a4e3](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/c90a4e318dbc9c2a730a1e2da301a8237b15cec9))
+* upgrade dependency to be ready for java 25 ([9f57004](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/9f570047e481ceace1725ef15776f4160f604a17))
+* upgrade java version in dockerfile as well and deps ([230ede5](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/230ede5b7d386d8dff0171b567e9c83fda661544))

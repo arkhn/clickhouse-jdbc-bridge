@@ -4,7 +4,7 @@
     <groupId>com.clickhouse</groupId>
     <artifactId>clickhouse-jdbc-bridge</artifactId>
     <packaging>jar</packaging>
-    <version>2.1.0-SNAPSHOT</version>
+    <version>1.0.0</version>
     <name>ClickHouse JDBC Bridge</name>
     <url>https://github.com/ClickHouse/clickhouse-jdbc-bridge</url>
     <description>JDBC bridge for ClickHouse.</description>
