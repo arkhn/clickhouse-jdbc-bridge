@@ -28,14 +28,10 @@
 # Build only the base image (no drivers):
 #   docker build --target base -t arkhn/clickhouse-jdbc-bridge:base .
 
-ARG REVISION=2.1.0-SNAPSHOT
-
 # -----------------------------------------------------------------------------
 # Stage 1/3: Compile the project
 # -----------------------------------------------------------------------------
 FROM eclipse-temurin:25-jammy AS builder
-
-ARG REVISION
 
 WORKDIR /build
 
@@ -44,9 +40,14 @@ COPY src ./src
 COPY misc ./misc
 COPY LICENSE NOTICE ./
 
+# Build then rename the shaded jar to a version-independent path so downstream
+# stages don't have to track pom.xml's <version>. The actual project version
+# comes from pom.xml directly (Maven reads it); the Dockerfile no longer needs
+# a matching REVISION arg.
 RUN apt-get update \
 	&& apt-get install -y maven \
 	&& mvn clean package -DskipTests -Dnotice.skip=true -Dlicense.skip=true \
+	&& mv target/clickhouse-jdbc-bridge-*-shaded.jar target/clickhouse-jdbc-bridge-shaded.jar \
 	&& apt-get clean \
 	&& rm -rf /var/lib/apt/lists/*
 
@@ -55,18 +56,16 @@ RUN apt-get update \
 # -----------------------------------------------------------------------------
 FROM eclipse-temurin:25-jre-jammy AS base
 
-ARG REVISION
-
 LABEL maintainer="infra@arkhn.com"
 
-ENV JDBC_BRIDGE_HOME=/app JDBC_BRIDGE_VERSION=${REVISION}
+ENV JDBC_BRIDGE_HOME=/app
 
 # Use a single shared classloader that includes every jar in $JDBC_BRIDGE_HOME/drivers/.
 # Default upstream behaviour ("true") requires each datasource to declare its own
 # driverUrls; flipping this lets datasources rely on jars dropped into the drivers dir.
 ENV CUSTOM_DRIVER_LOADER=false
 
-LABEL app_name="ClickHouse JDBC Bridge" app_version="$JDBC_BRIDGE_VERSION" variant="base"
+LABEL app_name="ClickHouse JDBC Bridge" variant="base"
 
 RUN apt-get update \
 	&& DEBIAN_FRONTEND=noninteractive apt-get install -y --allow-unauthenticated apache2-utils \
@@ -75,16 +74,14 @@ RUN apt-get update \
 	&& mkdir -p $JDBC_BRIDGE_HOME/drivers \
 	&& rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
-COPY --from=builder --chown=root:root /build/target/clickhouse-jdbc-bridge-${REVISION}-shaded.jar $JDBC_BRIDGE_HOME/
+COPY --from=builder --chown=root:root /build/target/clickhouse-jdbc-bridge-shaded.jar $JDBC_BRIDGE_HOME/
 COPY --chown=root:root LICENSE NOTICE $JDBC_BRIDGE_HOME/
 COPY --chown=root:root docker/ $JDBC_BRIDGE_HOME
 
 RUN chmod +x $JDBC_BRIDGE_HOME/*.sh \
 	&& mkdir -p $JDBC_BRIDGE_HOME/logs /usr/local/lib/java \
 	&& ln -s $JDBC_BRIDGE_HOME/logs /var/log/clickhouse-jdbc-bridge \
-	&& ln -s $JDBC_BRIDGE_HOME/clickhouse-jdbc-bridge-${JDBC_BRIDGE_VERSION}-shaded.jar \
-		$JDBC_BRIDGE_HOME/clickhouse-jdbc-bridge-shaded.jar \
-	&& ln -s $JDBC_BRIDGE_HOME/clickhouse-jdbc-bridge-${JDBC_BRIDGE_VERSION}-shaded.jar \
+	&& ln -s $JDBC_BRIDGE_HOME/clickhouse-jdbc-bridge-shaded.jar \
 		/usr/local/lib/java/clickhouse-jdbc-bridge-shaded.jar \
 	&& ln -s $JDBC_BRIDGE_HOME /etc/clickhouse-jdbc-bridge
 
