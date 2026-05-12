@@ -1,3 +1,9 @@
+## [1.0.2](https://github.com/arkhn/clickhouse-jdbc-bridge/compare/v1.0.1...v1.0.2) (2026-05-12)
+
+### Bug Fixes
+
+* shaded expectations ([c6aa4e8](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/c6aa4e838c4575294999f3ad02a1e04e57d8430d))
+
 ## [1.0.1](https://github.com/arkhn/clickhouse-jdbc-bridge/compare/v1.0.0...v1.0.1) (2026-05-12)
 
 ### Bug Fixes
