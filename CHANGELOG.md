@@ -1,3 +1,9 @@
+## [1.0.1](https://github.com/arkhn/clickhouse-jdbc-bridge/compare/v1.0.0...v1.0.1) (2026-05-12)
+
+### Bug Fixes
+
+* remove maven artifact for now ([d11f69a](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/d11f69a5649e676b9145902b1b0dcb7ad72fa3d7))
+
 ## 1.0.0 (2026-05-12)
 
 ### Bug Fixes
