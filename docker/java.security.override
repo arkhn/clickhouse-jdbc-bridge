@@ -1,0 +1,23 @@
+# JDK Security property overrides for the bridge.
+#
+# The bridge runs on JRE 25, which by default disables TLS 1.0 / 1.1 via
+# jdk.tls.disabledAlgorithms. mssql-jdbc 12+ ALWAYS negotiates TLS for the
+# SQL Server login packet (even with encrypt=false), and many SQL Server
+# instances on older Windows hosts only speak TLS 1.0 / 1.1. Disabling them
+# at the JDK level produces:
+#
+#   "encrypt" property is set to "false" and "trustServerCertificate"
+#   property is set to "true" but the driver could not establish a secure
+#   connection ... Error: (unexpected_message) SQL Server did not return
+#   a response. The connection has been closed.
+#
+# Re-enabling TLS 1.0 / 1.1 here is safe because:
+#   - The bridge talks to backend databases over private networks only.
+#   - Wire confidentiality between bridge and SQL Server is controlled by
+#     the datasource JDBC URL (`encrypt=...`), not by this list.
+#
+# Loaded via `-Djava.security.properties=$JDBC_BRIDGE_HOME/java.security.override`
+# in docker-entrypoint.sh. The single `=` form merges with the JDK default
+# java.security and overrides only the named property.
+
+jdk.tls.disabledAlgorithms=SSLv3, RC4, MD5withRSA, DH keySize < 1024, EC keySize < 224, 3DES_EDE_CBC, anon, NULL, include jdk.disabled.namedCurves
