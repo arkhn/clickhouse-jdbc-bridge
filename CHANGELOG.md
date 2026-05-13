@@ -1,3 +1,9 @@
+## [1.0.3](https://github.com/arkhn/clickhouse-jdbc-bridge/compare/v1.0.2...v1.0.3) (2026-05-13)
+
+### Bug Fixes
+
+* release process don't push latest ([77fac1d](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/77fac1d7d3a1a0311756055a715ad22440967b19))
+
 ## [1.0.2](https://github.com/arkhn/clickhouse-jdbc-bridge/compare/v1.0.1...v1.0.2) (2026-05-12)
 
 ### Bug Fixes
