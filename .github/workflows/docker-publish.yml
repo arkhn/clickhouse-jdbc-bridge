@@ -15,8 +15,8 @@ on:
         description: "Patch"
         required: false
         default: "0"
-      tag_latest:
-        description: "Also push :latest / :full mutable tags"
+      tag_full:
+        description: "Also push the :full mutable tag"
         required: false
         default: true
         type: boolean
@@ -36,8 +36,8 @@ on:
         required: false
         type: string
         default: "0"
-      tag_latest:
-        description: "Also push :latest / :full mutable tags"
+      tag_full:
+        description: "Also push the :full mutable tag"
         required: false
         type: boolean
         default: true
@@ -69,6 +69,9 @@ jobs:
           username: ${{ secrets.DOCKER_LOGIN }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
+      # NOTE: we deliberately do NOT publish a :latest tag. Consumers that pin to
+      # :latest end up auto-upgrading across major versions; pin to :vMAJOR (e.g.
+      # :v1-full) or a specific :vX.Y.Z-full tag instead.
       - name: Compute tags
         id: tags
         run: |
@@ -78,9 +81,8 @@ jobs:
           TAGS="${TAGS},${{ env.REGISTRY_IMAGE }}:v${{ inputs.major }}.${{ inputs.minor }}"
           TAGS="${TAGS},${{ env.REGISTRY_IMAGE }}:v${{ inputs.major }}-full"
           TAGS="${TAGS},${{ env.REGISTRY_IMAGE }}:v${{ inputs.major }}"
-          if [ "${{ inputs.tag_latest }}" = "true" ]; then
+          if [ "${{ inputs.tag_full }}" = "true" ]; then
             TAGS="${TAGS},${{ env.REGISTRY_IMAGE }}:full"
-            TAGS="${TAGS},${{ env.REGISTRY_IMAGE }}:latest"
           fi
           echo "tags=${TAGS}" >> "$GITHUB_OUTPUT"
 
