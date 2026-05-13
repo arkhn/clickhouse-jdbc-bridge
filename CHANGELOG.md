@@ -1,3 +1,9 @@
+## [1.0.4](https://github.com/arkhn/clickhouse-jdbc-bridge/compare/v1.0.3...v1.0.4) (2026-05-13)
+
+### Bug Fixes
+
+* improve timeout and relax tls security defaults ([bb42622](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/bb426226d1e8381542761037851364bcc41c5abe))
+
 ## [1.0.3](https://github.com/arkhn/clickhouse-jdbc-bridge/compare/v1.0.2...v1.0.3) (2026-05-13)
 
 ### Bug Fixes
