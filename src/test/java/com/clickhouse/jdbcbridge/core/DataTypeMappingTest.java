@@ -48,4 +48,29 @@ public class DataTypeMappingTest {
         assertTrue(m.accept(JDBCType.VARCHAR, "bit"));
         assertEquals(m.getMappedType(), DataType.Int8);
     }
+
+    @Test(groups = { "unit" })
+    public void testFromVendorTypeCode() {
+        // microsoft.sql.Types.DATETIMEOFFSET — not in java.sql.Types, so JDBCType.valueOf throws.
+        try {
+            JDBCType.valueOf(-155);
+            fail("Expected IllegalArgumentException for vendor-only JDBC type code -155");
+        } catch (IllegalArgumentException expected) {
+            // expected
+        }
+        assertEquals(DataTypeMapping.fromVendorTypeCode(-155), DataType.DateTime64);
+
+        // oracle.jdbc.OracleType.BINARY_FLOAT
+        assertEquals(DataTypeMapping.fromVendorTypeCode(100), DataType.Float32);
+
+        // oracle.jdbc.OracleType.BINARY_DOUBLE
+        assertEquals(DataTypeMapping.fromVendorTypeCode(101), DataType.Float64);
+
+        // Unknown vendor code returns null so the caller can decide how to fall back.
+        assertNull(DataTypeMapping.fromVendorTypeCode(-9999));
+
+        // Standard java.sql.Types codes are NOT served by the vendor lookup; this stays
+        // a vendor-only escape hatch and shouldn't shadow the normal converter path.
+        assertNull(DataTypeMapping.fromVendorTypeCode(Types.VARCHAR));
+    }
 }

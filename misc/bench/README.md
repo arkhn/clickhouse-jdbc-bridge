@@ -32,10 +32,17 @@ docker build --target full -t arkhn/clickhouse-jdbc-bridge:bench ../..
 
 ## Apple Silicon note
 
-`sqlserver` and `clickhouse` and the bridge image are amd64-only and run under emulation on
-arm64 hosts. `oracle` has an arm64 native image and runs at full speed. The harness sets
-`emulated=true` on the run summary so emulated numbers aren't mistaken for real ones — use x86
-hardware (or a remote runner) for publishable figures.
+The bridge `Dockerfile` builds cleanly on arm64 (base is `eclipse-temurin:25-jammy`, which is
+multi-arch upstream), so a local arm64 build via `docker buildx build --platform linux/arm64
+--target full -t arkhn/clickhouse-jdbc-bridge:bench .` runs natively on M-series. Released
+images on Docker Hub remain `linux/amd64` only — there's no need to publish multi-arch since
+the use case is local benchmarking. `clickhouse` is multi-arch upstream. `oracle`
+(gvenzl/oracle-free) is multi-arch. The remaining emulated service is `sqlserver` —
+`mcr.microsoft.com/mssql/server` is amd64-only and runs under QEMU on arm64 hosts, which
+dominates the wall-clock cost of SQL Server workloads on Apple Silicon. The harness still sets
+`emulated=true` on the run summary whenever any container is non-native, so emulated numbers
+aren't mistaken for real ones — use x86 hardware (or a remote runner) for publishable SQL
+Server figures. Oracle-only runs on Apple Silicon are fully native.
 
 ## Usage
 

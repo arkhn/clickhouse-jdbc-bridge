@@ -11,8 +11,10 @@ name: chjdbc-bench
 #   grafana     - pre-provisioned dashboards
 #   cadvisor    - cgroup-level container stats (RAM RSS, CPU, FDs)
 #
-# Apple Silicon note: sqlserver and oracle images are amd64 only; they run under emulation.
-# Numbers from emulated runs are directional, not publishable. Mark results with emulated=true.
+# Apple Silicon note: only `sqlserver` is amd64-only and runs under emulation on arm64 hosts.
+# The bridge image is multi-arch (linux/amd64 + linux/arm64), and `oracle` (gvenzl/oracle-free)
+# ships an arm64 build, so both run natively on M-series. Numbers from any run involving the
+# emulated SQL Server service are directional, not publishable — mark results with emulated=true.
 #
 # Profiles:
 #   small  - default, everything constrained to fit on a 16 GB laptop
