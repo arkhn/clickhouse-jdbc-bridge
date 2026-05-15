@@ -451,7 +451,12 @@ public class JdbcBridgeIntegrationIT {
             bodyFuture.complete(body.toString());
         }).onFailure(bodyFuture::completeExceptionally);
         
-        String body = bodyFuture.get(10, TimeUnit.SECONDS);
+        // 30 s body timeout (matches the response-arrival timeout above). Originally 10 s,
+        // which was tight enough that a cold MySQL warmup or a slow CI runner could trip it
+        // while the response was actually still streaming. The bridge has its own
+        // queryTimeout (60 s in tests) — the assertion-side timeout should be at least that
+        // generous so we don't false-positive a hang on a slow but otherwise-healthy run.
+        String body = bodyFuture.get(30, TimeUnit.SECONDS);
         assertNotNull(body);
         // Response should contain data from MySQL (binary format, but should not be empty)
         assertTrue(body.length() > 0, "Response should not be empty");
