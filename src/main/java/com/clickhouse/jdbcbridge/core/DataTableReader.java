@@ -17,6 +17,8 @@ package com.clickhouse.jdbcbridge.core;
 
 import java.util.Objects;
 import java.util.TimeZone;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Interface for reading tabular data and writing to response.
@@ -178,6 +180,7 @@ public interface DataTableReader {
 
             if (++rowCount % batchSize == 0) {
                 writer.write(buffer);
+                awaitDrain(dataSourceId, writer);
 
                 buffer = ByteBuffer.newInstance(estimatedBufferSize, timezone);
             }
@@ -185,6 +188,48 @@ public interface DataTableReader {
 
         if (rowCount % batchSize != 0) {
             writer.write(buffer);
+            awaitDrain(dataSourceId, writer);
+        }
+    }
+
+    /**
+     * Apply HTTP write back-pressure: if the response's write queue is full,
+     * park the producer (this is invoked from a Vert.x worker thread, so
+     * blocking is safe) until the Netty pipeline drains. Without this the
+     * advisory {@code setWriteQueueMaxSize} is ignored on {@code write()} and
+     * un-acked {@code ByteBuf}s accumulate unbounded, causing OOM under
+     * concurrent bulk reads.
+     *
+     * @param dataSourceId datasource id, used for error context
+     * @param writer       response writer to back-pressure against
+     */
+    default void awaitDrain(String dataSourceId, ResponseWriter writer) {
+        if (!writer.writeQueueFull()) {
+            return;
+        }
+
+        // TODO: thread the configured queryTimeout from JdbcBridgeVerticle through
+        // QueryParameters/StreamOptions so this bound matches the request deadline.
+        final long drainTimeoutMs = 60_000L;
+        final CountDownLatch drained = new CountDownLatch(1);
+        writer.setDrainHanlder(v -> drained.countDown());
+        try {
+            // re-check after registering the handler: drain may have fired between
+            // writeQueueFull() and setDrainHanlder() above
+            if (!writer.writeQueueFull()) {
+                return;
+            }
+            if (!drained.await(drainTimeoutMs, TimeUnit.MILLISECONDS)) {
+                throw new DataAccessException(dataSourceId,
+                        "Response drain timed out after " + drainTimeoutMs + "ms (client slow or disconnected)",
+                        new java.io.IOException("response drain timeout"));
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new DataAccessException(dataSourceId, "Interrupted while waiting for response to drain", e);
+        } finally {
+            // detach so the latch isn't retained beyond this batch
+            writer.setDrainHanlder(null);
         }
     }
 
