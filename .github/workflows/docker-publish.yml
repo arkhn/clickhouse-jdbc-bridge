@@ -1,54 +1,60 @@
 name: Docker Publish
 
+# Reusable workflow that builds the multi-stage Dockerfile and pushes tags to
+# Docker Hub. Caller passes the SemVer string (e.g. "1.0.4" or "1.0.4-rc.3")
+# and a boolean `is_prerelease`:
+#
+#   is_prerelease=false (stable):
+#     :v{VERSION}, :v{VERSION}-full
+#     :v{MAJOR}.{MINOR}, :v{MAJOR}.{MINOR}-full   (rolling within minor)
+#     :v{MAJOR}, :v{MAJOR}-full                   (rolling within major)
+#     :full                                       (rolling latest stable; gated by `tag_full`)
+#
+#   is_prerelease=true (RC):
+#     :v{VERSION}, :v{VERSION}-full   only
+#     No rolling tags ever — consumers pinning to :vN or :full should never
+#     auto-upgrade to a candidate.
+#
+# We deliberately do NOT publish :latest — pin to :vMAJOR or a specific
+# :vX.Y.Z to avoid cross-major surprise upgrades.
+
 on:
   workflow_dispatch:
     inputs:
-      major:
-        description: "Major version"
+      version:
+        description: "Full SemVer version (e.g. 1.0.4 or 1.0.4-rc.3)"
         required: true
-        default: "2"
-      minor:
-        description: "Minor version"
+        type: string
+      is_prerelease:
+        description: "If true, only push the version-pinned tags (no rolling)"
         required: false
-        default: "1"
-      patch:
-        description: "Patch"
-        required: false
-        default: "0"
-      tag_full:
-        description: "Also push the :full mutable tag"
-        required: false
-        default: true
         type: boolean
+        default: false
+      tag_full:
+        description: "Also push the :full mutable tag (stable only)"
+        required: false
+        type: boolean
+        default: true
   workflow_call:
     inputs:
-      major:
-        description: "Major version"
+      version:
+        description: "Full SemVer version (e.g. 1.0.4 or 1.0.4-rc.3)"
         required: true
         type: string
-      minor:
-        description: "Minor version"
+      is_prerelease:
+        description: "If true, only push the version-pinned tags (no rolling)"
         required: false
-        type: string
-        default: "1"
-      patch:
-        description: "Patch"
-        required: false
-        type: string
-        default: "0"
+        type: boolean
+        default: false
       tag_full:
-        description: "Also push the :full mutable tag"
+        description: "Also push the :full mutable tag (stable only)"
         required: false
         type: boolean
         default: true
 
 env:
   REGISTRY_IMAGE: arkhn/clickhouse-jdbc-bridge
-  VERSION: ${{ inputs.major }}.${{ inputs.minor }}.${{ inputs.patch }}
 
-# Single-pass build of the multi-stage Dockerfile: produces `base` as an
-# intermediate stage and `full` as the final image. Only `full` is tagged
-# and pushed to Docker Hub — `base` stays private to the build.
 jobs:
   build-full:
     name: "Build and Push Full Image"
@@ -69,22 +75,44 @@ jobs:
           username: ${{ secrets.DOCKER_LOGIN }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
-      # NOTE: we deliberately do NOT publish a :latest tag. Consumers that pin to
-      # :latest end up auto-upgrading across major versions; pin to :vMAJOR (e.g.
-      # :v1-full) or a specific :vX.Y.Z-full tag instead.
       - name: Compute tags
         id: tags
+        env:
+          VERSION: ${{ inputs.version }}
+          IS_PRERELEASE: ${{ inputs.is_prerelease }}
+          TAG_FULL: ${{ inputs.tag_full }}
         run: |
-          TAGS="${{ env.REGISTRY_IMAGE }}:v${{ env.VERSION }}-full"
-          TAGS="${TAGS},${{ env.REGISTRY_IMAGE }}:v${{ env.VERSION }}"
-          TAGS="${TAGS},${{ env.REGISTRY_IMAGE }}:v${{ inputs.major }}.${{ inputs.minor }}-full"
-          TAGS="${TAGS},${{ env.REGISTRY_IMAGE }}:v${{ inputs.major }}.${{ inputs.minor }}"
-          TAGS="${TAGS},${{ env.REGISTRY_IMAGE }}:v${{ inputs.major }}-full"
-          TAGS="${TAGS},${{ env.REGISTRY_IMAGE }}:v${{ inputs.major }}"
-          if [ "${{ inputs.tag_full }}" = "true" ]; then
-            TAGS="${TAGS},${{ env.REGISTRY_IMAGE }}:full"
+          set -euo pipefail
+
+          # Strip leading "v" if accidentally included.
+          VERSION="${VERSION#v}"
+
+          # Split MAJOR.MINOR.PATCH out of the SemVer base (everything before "-").
+          BASE="${VERSION%%-*}"
+          MAJOR="${BASE%%.*}"
+          TMP="${BASE#*.}"
+          MINOR="${TMP%%.*}"
+          PATCH="${TMP##*.}"
+
+          # Version-pinned tags — always pushed, RC or stable.
+          TAGS="${{ env.REGISTRY_IMAGE }}:v${VERSION}-full"
+          TAGS="${TAGS},${{ env.REGISTRY_IMAGE }}:v${VERSION}"
+
+          # Rolling tags — stable releases only. A candidate must never silently
+          # bump :vMAJOR or :full for downstream consumers.
+          if [ "$IS_PRERELEASE" = "false" ]; then
+            TAGS="${TAGS},${{ env.REGISTRY_IMAGE }}:v${MAJOR}.${MINOR}-full"
+            TAGS="${TAGS},${{ env.REGISTRY_IMAGE }}:v${MAJOR}.${MINOR}"
+            TAGS="${TAGS},${{ env.REGISTRY_IMAGE }}:v${MAJOR}-full"
+            TAGS="${TAGS},${{ env.REGISTRY_IMAGE }}:v${MAJOR}"
+            if [ "$TAG_FULL" = "true" ]; then
+              TAGS="${TAGS},${{ env.REGISTRY_IMAGE }}:full"
+            fi
           fi
+
           echo "tags=${TAGS}" >> "$GITHUB_OUTPUT"
+          echo "Computed tags:"
+          echo "${TAGS}" | tr ',' '\n' | sed 's/^/  - /'
 
       - name: Build and Push Full Image
         uses: docker/build-push-action@v5

@@ -1,21 +1,28 @@
 name: Release
 
+# Model (mirrors arkhn/helm-charts):
+#   - push to master       -> X.Y.Z-rc.N (prerelease, from .releaserc.json)
+#   - workflow_dispatch on master  -> X.Y.Z (stable; semantic-release `branches:`
+#                                    override forces the current ref to be
+#                                    treated as a stable release branch)
+#   - push to v<N>.x       -> stable patch on that maintenance line
+#
+# After the first stable of a new major: the prior major's last stable tag is
+# archived to v<prior>.x. At most 3 major maintenance branches are kept on the
+# remote (oldest pruned).
+
 on:
   push:
     branches:
       - master
-      - next
       - 'v*.x'
     paths-ignore:
       - '**.md'
       - 'misc/**'
+  # Manual trigger from the GitHub UI. Use this on `master` to promote the
+  # current rc cycle to a stable release. Triggering on a `v*.x` branch is
+  # equivalent to pushing to it (a stable patch on that line).
   workflow_dispatch:
-    inputs:
-      dry_run:
-        description: "Dry run (compute next version but do not publish)"
-        required: false
-        default: false
-        type: boolean
 
 permissions:
   contents: write
@@ -67,7 +74,11 @@ jobs:
         id: semantic
         uses: cycjimmy/semantic-release-action@v6
         with:
-          dry_run: ${{ github.event.inputs.dry_run || 'false' }}
+          dry_run: false
+          # On workflow_dispatch (manual trigger), force the current branch to
+          # be treated as a stable release branch. On regular pushes, fall
+          # through to .releaserc.json — which makes master prerelease=rc.
+          branches: ${{ github.event_name == 'workflow_dispatch' && github.ref_name || '' }}
           extra_plugins: |
             @semantic-release/changelog
             @semantic-release/exec
@@ -80,48 +91,49 @@ jobs:
           GIT_AUTHOR_EMAIL: "${{ steps.bot-user-id.outputs.user-id }}+${{ steps.generate_token.outputs.app-slug }}[bot]@users.noreply.github.com"
           GIT_COMMITTER_EMAIL: "${{ steps.bot-user-id.outputs.user-id }}+${{ steps.generate_token.outputs.app-slug }}[bot]@users.noreply.github.com"
 
-      - name: Create / update maintenance branch (v<major>.x)
-        if: steps.semantic.outputs.new_release_published == 'true' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/next')
+      # After the first stable of a new major lands on master, archive the
+      # prior major to v<prior>.x at its last stable tag. Then prune so at
+      # most 3 major maintenance branches live on origin.
+      - name: Archive prior major and prune
+        if: |
+          steps.semantic.outputs.new_release_published == 'true'
+          && !contains(steps.semantic.outputs.new_release_version, '-')
+          && github.ref_name == 'master'
         env:
-          BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
+          NEW_MAJOR: ${{ steps.semantic.outputs.new_release_major_version }}
+          NEW_VERSION: ${{ steps.semantic.outputs.new_release_version }}
         run: |
-          CURRENT_MAJOR=${{ steps.semantic.outputs.new_release_major_version }}
-          CURRENT_MAJOR_BRANCH="v${CURRENT_MAJOR}.x"
-
-          echo "➡️  New major version: $CURRENT_MAJOR"
-          echo "➡️  Maintenance branch: $CURRENT_MAJOR_BRANCH"
-
-          git fetch --all
-          SOURCE_BRANCH=$(echo "$BRANCH_NAME" | sed 's|refs/heads/||')
-          git checkout "$SOURCE_BRANCH"
-          git pull origin "$SOURCE_BRANCH" || true
-
-          if ! git diff-index --quiet HEAD --; then
-            git stash push -m "Temporary stash before maintenance branch checkout"
-          fi
-
-          if git ls-remote --heads origin "$CURRENT_MAJOR_BRANCH" | grep -q "$CURRENT_MAJOR_BRANCH"; then
-            echo "✅ Branch '$CURRENT_MAJOR_BRANCH' already exists. Updating it..."
-            git checkout "$CURRENT_MAJOR_BRANCH"
-            git pull origin "$CURRENT_MAJOR_BRANCH" || true
-
-            if git merge --ff-only "$SOURCE_BRANCH" 2>/dev/null; then
-              echo "✅ Fast-forward merge successful"
-            else
-              echo "⚠️  Cannot fast-forward, performing regular merge..."
-              git merge --no-ff -m "chore: merge $SOURCE_BRANCH into $CURRENT_MAJOR_BRANCH" "$SOURCE_BRANCH" || {
-                echo "⚠️  Merge conflict — resolving with -X theirs"
-                git merge --abort 2>/dev/null || true
-                git merge -X theirs --no-ff -m "chore: merge $SOURCE_BRANCH into $CURRENT_MAJOR_BRANCH" "$SOURCE_BRANCH"
-              }
+          set -euo pipefail
+          # Count pre-existing stable tags for this major (exclude the new one).
+          EXISTING=$(git tag --list "v${NEW_MAJOR}.*" | grep -vE -- '-' | grep -v "^v${NEW_VERSION}$" | wc -l)
+          if [ "$EXISTING" -eq 0 ]; then
+            PRIOR_MAJOR=$(git tag --list 'v*' | grep -vE -- '-' | sed -E 's/^v([0-9]+).*/\1/' | sort -un | awk -v new="$NEW_MAJOR" '$1 < new' | tail -n 1)
+            if [ -n "$PRIOR_MAJOR" ]; then
+              ARCHIVAL_BRANCH="v${PRIOR_MAJOR}.x"
+              if git ls-remote --exit-code --heads origin "$ARCHIVAL_BRANCH" >/dev/null 2>&1; then
+                echo "ℹ️ $ARCHIVAL_BRANCH already exists; skipping archival."
+              else
+                LAST_OLD_STABLE=$(git tag --list "v${PRIOR_MAJOR}.*" | grep -vE -- '-' | sort -V | tail -n 1)
+                if [ -n "$LAST_OLD_STABLE" ]; then
+                  echo "📦 Archiving major $PRIOR_MAJOR: creating $ARCHIVAL_BRANCH at $LAST_OLD_STABLE"
+                  git branch "$ARCHIVAL_BRANCH" "$LAST_OLD_STABLE"
+                  git push origin "$ARCHIVAL_BRANCH"
+                fi
+              fi
             fi
-            git commit --allow-empty -m "chore(release): ${{ steps.semantic.outputs.new_release_version }}"
-            git push origin "$CURRENT_MAJOR_BRANCH"
+          fi
+          # Prune: keep at most 3 major maintenance branches.
+          maint=$(git ls-remote --heads origin | awk '{print $2}' | sed 's|refs/heads/||' | grep -E '^v[0-9]+\.x$' | sort -V)
+          total=$(printf '%s\n' "$maint" | grep -c . || true)
+          if [ "$total" -gt 3 ]; then
+            echo "Found $total major maintenance branches; pruning to 3"
+            printf '%s\n' "$maint" | head -n -3 | while read -r branch; do
+              [ -z "$branch" ] && continue
+              echo "🗑️ Pruning $branch"
+              git push origin --delete "$branch"
+            done
           else
-            echo "🚀 Creating maintenance branch '$CURRENT_MAJOR_BRANCH'..."
-            git reset --hard HEAD
-            git checkout -b "$CURRENT_MAJOR_BRANCH"
-            git push origin "$CURRENT_MAJOR_BRANCH"
+            echo "Found $total major maintenance branches; no pruning needed"
           fi
 
   publish-docker:
@@ -130,7 +142,8 @@ jobs:
     if: needs.release.outputs.new_release_published == 'true'
     uses: ./.github/workflows/docker-publish.yml
     with:
-      major: ${{ needs.release.outputs.new_release_major_version }}
-      minor: ${{ needs.release.outputs.new_release_minor_version }}
-      patch: ${{ needs.release.outputs.new_release_patch_version }}
+      version: ${{ needs.release.outputs.new_release_version }}
+      # `is_prerelease` mirrors what semantic-release decided: rc versions
+      # contain a "-", stable ones don't.
+      is_prerelease: ${{ contains(needs.release.outputs.new_release_version, '-') }}
     secrets: inherit
