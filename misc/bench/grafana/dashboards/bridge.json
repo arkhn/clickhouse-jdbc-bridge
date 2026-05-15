@@ -107,6 +107,61 @@
       "targets": [
         { "expr": "rate(ClickHouseProfileEvents_FailedQuery{job=\"clickhouse\"}[30s])", "legendFormat": "FailedQuery" }
       ]
+    },
+    {
+      "type": "row",
+      "title": "Bridge - HikariCP",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 35 },
+      "id": 103
+    },
+    {
+      "type": "timeseries",
+      "title": "HikariCP connections (active / idle / pending)",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 36 },
+      "id": 9,
+      "targets": [
+        { "expr": "sum by (pool) (hikaricp_connections_active{job=\"jdbc-bridge\"})", "legendFormat": "{{pool}} active" },
+        { "expr": "sum by (pool) (hikaricp_connections_idle{job=\"jdbc-bridge\"})", "legendFormat": "{{pool}} idle" },
+        { "expr": "sum by (pool) (hikaricp_connections_pending{job=\"jdbc-bridge\"})", "legendFormat": "{{pool}} pending" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Connection acquisition latency (p50 / p95 / p99)",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 36 },
+      "id": 10,
+      "fieldConfig": { "defaults": { "unit": "s" } },
+      "targets": [
+        { "expr": "histogram_quantile(0.50, sum by (le, pool) (rate(hikaricp_connections_acquire_seconds_bucket{job=\"jdbc-bridge\"}[1m])))", "legendFormat": "{{pool}} p50" },
+        { "expr": "histogram_quantile(0.95, sum by (le, pool) (rate(hikaricp_connections_acquire_seconds_bucket{job=\"jdbc-bridge\"}[1m])))", "legendFormat": "{{pool}} p95" },
+        { "expr": "histogram_quantile(0.99, sum by (le, pool) (rate(hikaricp_connections_acquire_seconds_bucket{job=\"jdbc-bridge\"}[1m])))", "legendFormat": "{{pool}} p99" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Connection usage latency (p50 / p95 / p99)",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 44 },
+      "id": 11,
+      "fieldConfig": { "defaults": { "unit": "s" } },
+      "targets": [
+        { "expr": "histogram_quantile(0.50, sum by (le, pool) (rate(hikaricp_connections_usage_seconds_bucket{job=\"jdbc-bridge\"}[1m])))", "legendFormat": "{{pool}} p50" },
+        { "expr": "histogram_quantile(0.95, sum by (le, pool) (rate(hikaricp_connections_usage_seconds_bucket{job=\"jdbc-bridge\"}[1m])))", "legendFormat": "{{pool}} p95" },
+        { "expr": "histogram_quantile(0.99, sum by (le, pool) (rate(hikaricp_connections_usage_seconds_bucket{job=\"jdbc-bridge\"}[1m])))", "legendFormat": "{{pool}} p99" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Connection churn (creates/s, timeouts/s)",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 44 },
+      "id": 12,
+      "targets": [
+        { "expr": "sum by (pool) (rate(hikaricp_connections_creation_seconds_count{job=\"jdbc-bridge\"}[1m]))", "legendFormat": "{{pool}} created/s" },
+        { "expr": "sum by (pool) (rate(hikaricp_connections_timeout_total{job=\"jdbc-bridge\"}[1m]))", "legendFormat": "{{pool}} timed out/s" }
+      ]
     }
   ],
   "refresh": "5s",
@@ -118,6 +173,6 @@
   "timezone": "",
   "title": "ClickHouse JDBC Bridge - Bench",
   "uid": "chjdbc-bench",
-  "version": 1,
+  "version": 2,
   "weekStart": ""
 }
