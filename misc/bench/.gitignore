@@ -1,0 +1,10 @@
+# Bench results are reproducible from the harness — do not commit them.
+# If you want to share a specific run, drop a tarball in a release asset or use a samples/ dir.
+results/
+
+# Downloaded JDBC drivers (also reproducible — Maven Central URLs in the README/Dockerfile).
+bridge-drivers/
+
+# Local overrides
+*.local.yaml
+.env

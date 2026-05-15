@@ -1,0 +1,123 @@
+{
+  "annotations": { "list": [] },
+  "editable": false,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "type": "row",
+      "title": "Bridge - JVM",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 100
+    },
+    {
+      "type": "timeseries",
+      "title": "JVM heap used (bytes)",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 1 },
+      "id": 1,
+      "fieldConfig": { "defaults": { "unit": "bytes" } },
+      "targets": [
+        { "expr": "sum by (area) (jvm_memory_used_bytes{job=\"jdbc-bridge\"})", "legendFormat": "{{area}}" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "GC pause time (s/s)",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 1 },
+      "id": 2,
+      "targets": [
+        { "expr": "sum by (action) (rate(jvm_gc_pause_seconds_sum{job=\"jdbc-bridge\"}[1m]))", "legendFormat": "{{action}}" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Live threads",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 9 },
+      "id": 3,
+      "targets": [
+        { "expr": "jvm_threads_live_threads{job=\"jdbc-bridge\"}", "legendFormat": "live" },
+        { "expr": "jvm_threads_daemon_threads{job=\"jdbc-bridge\"}", "legendFormat": "daemon" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "File descriptors open",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 9 },
+      "id": 4,
+      "targets": [
+        { "expr": "process_files_open_files{job=\"jdbc-bridge\"}", "legendFormat": "open" }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Bridge - HTTP",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 17 },
+      "id": 101
+    },
+    {
+      "type": "timeseries",
+      "title": "Container RSS (cAdvisor)",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 18 },
+      "id": 5,
+      "fieldConfig": { "defaults": { "unit": "bytes" } },
+      "targets": [
+        { "expr": "container_memory_rss{name=~\"bench-.*\"}", "legendFormat": "{{name}}" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Container CPU (cores)",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 18 },
+      "id": 6,
+      "targets": [
+        { "expr": "sum by (name) (rate(container_cpu_usage_seconds_total{name=~\"bench-.*\"}[1m]))", "legendFormat": "{{name}}" }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "ClickHouse",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 26 },
+      "id": 102
+    },
+    {
+      "type": "timeseries",
+      "title": "Query throughput (qps)",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 27 },
+      "id": 7,
+      "targets": [
+        { "expr": "rate(ClickHouseProfileEvents_Query{job=\"clickhouse\"}[30s])", "legendFormat": "Query" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Failed queries (failed/s)",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 27 },
+      "id": 8,
+      "targets": [
+        { "expr": "rate(ClickHouseProfileEvents_FailedQuery{job=\"clickhouse\"}[30s])", "legendFormat": "FailedQuery" }
+      ]
+    }
+  ],
+  "refresh": "5s",
+  "schemaVersion": 39,
+  "tags": ["chjdbc-bench"],
+  "templating": { "list": [] },
+  "time": { "from": "now-15m", "to": "now" },
+  "timepicker": {},
+  "timezone": "",
+  "title": "ClickHouse JDBC Bridge - Bench",
+  "uid": "chjdbc-bench",
+  "version": 1,
+  "weekStart": ""
+}

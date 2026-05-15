@@ -1,0 +1,6 @@
+{
+  "workerPoolSize": 32,
+  "internalBlockingPoolSize": 32,
+  "maxWorkerExecuteTime": 600000000000,
+  "maxEventLoopExecuteTime": 60000000000
+}
