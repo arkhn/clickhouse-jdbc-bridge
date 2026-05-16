@@ -74,6 +74,42 @@ Add `-XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/var/log/oom` and an
 and analyse it in MAT/VisualVM. Otherwise skip it — Prometheus heap metrics
 plus `kubectl describe pod` give you enough post-mortem signal.
 
+## Engine defaults (applied automatically per driver)
+
+The bridge sets a curated set of per-engine JDBC connection properties at
+datasource-load time. These are properties that are not part of the JDBC
+standard and that operators almost never know to set, but that materially
+affect performance. **Operator config always wins**: a default is only
+applied if the same key is absent from both the JDBC URL and the datasource's
+`dataSourceProperties` block. To override, set the key in either place.
+
+| Driver | Property | Value | Why |
+|---|---|---|---|
+| `SQLServerDriver` (mssql-jdbc ≥ 6.0) | `selectMethod` | `cursor` | server-side cursor → true streaming on large results |
+| `SQLServerDriver` | `responseBuffering` | `adaptive` | bounded client buffering on the driver side |
+| `SQLServerDriver` | `useBulkCopyForBatchInsert` | `true` | collapses INSERT batches into TDS bulk-load protocol |
+| `OracleDriver` | `oracle.jdbc.defaultRowPrefetch` | `2000` | driver default is 10 (!) — terrible for bulk reads |
+| `OracleDriver` | `oracle.jdbc.implicitStatementCacheSize` | `50` | server-side cursor cache; fixes the small-batch p99 cliff |
+| `OracleDriver` | `oracle.jdbc.useThreadLocalBufferCache` | `true` | per-thread buffer reuse |
+| `OracleDriver` | `useFetchSizeWithLongColumn` | `true` | fetch_size honoured even for CLOB/BLOB |
+| `OracleDriver` | `oracle.net.disableOob` | `true` | works around misbehaving firewalls on OOB breaks |
+| `OracleDriver` | `oracle.jdbc.timezoneAsRegion` | `false` | pass JVM TZ literally, fewer Oracle session surprises |
+| `mysql.cj.jdbc.Driver` | `useServerPrepStmts`, `cachePrepStmts`, `rewriteBatchedStatements`, `useUnicode=true`, `characterEncoding=UTF-8`, `useLocalSessionState` | — | prep-stmt reuse, bulk INSERT rewrite |
+| `mariadb.jdbc.Driver` | same as MySQL minus `useLocalSessionState` | — | — |
+| `postgresql.Driver` | `prepareThreshold=3`, `defaultRowFetchSize=10000`, `binaryTransfer=true` | — | server-side prep + bounded fetch + binary protocol |
+
+The mssql `selectMethod=cursor` default is conditional on `Driver.getMajorVersion() >= 6` —
+older mssql-jdbc parses the property differently. If we can't determine the version
+(driver not on classpath), `selectMethod` is omitted; the other mssql defaults still apply.
+
+Real-world impact measured by `misc/bench`:
+
+- **Oracle W5 batch=100 c=4**: p99 dropped from **6.35 s → 9 ms** (700× faster)
+  thanks to `implicitStatementCacheSize=50`. Same throughput cap, but every
+  request now completes in a tight latency band instead of a long tail.
+- Engine defaults log line at INFO when each property is applied — easy to
+  audit at startup.
+
 ## Per-request knobs
 
 Operators override these via the JDBC URL,
