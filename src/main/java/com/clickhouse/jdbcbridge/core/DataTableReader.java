@@ -81,11 +81,16 @@ public interface DataTableReader {
         // build column indices: 0 -> Request column index; 1 -> ResultSet column index
         int length = requestColumns.length;
         int[][] colIndices = new int[length][2];
+        // P1: hoist column.isNullable() out of the row loop so the hot path doesn't
+        // re-dispatch a (potentially megamorphic) getter per row x per column.
+        // Indexed by request column index (i) — matches the layout of colIndices.
+        boolean[] nullableMask = new boolean[length];
 
         for (int i = 0; i < length; i++) {
             boolean matched = false;
             ColumnDefinition col = requestColumns[i];
             String colName = col.getName();
+            nullableMask[i] = col.isNullable();
 
             // let's check if it's a virtual column which does not exist in result first
             if (params.showDatasourceColumn() && TableDefinition.COLUMN_DATASOURCE.equals(colName)) {
@@ -138,6 +143,13 @@ public interface DataTableReader {
             batchSize = 1;
         }
         int estimatedBufferSize = length * 4 * batchSize;
+        // P2: cap on the adaptive size-hint (16 MiB) so a single outsized batch
+        // (e.g. a row with a huge BLOB-shaped String) cannot wedge the hint at a
+        // pathological value for the rest of the request. The cap is generous —
+        // typical batches are small KiBs — so steady-state behaviour is "size hint
+        // = previous batch's actual byte count" and the next batch lands with zero
+        // capacity-doubling.
+        final int maxBufferSizeHint = 16 * 1024 * 1024;
 
         ByteBuffer buffer = ByteBuffer.newInstance(estimatedBufferSize, timezone);
         boolean skipped = rowCount > 0;
@@ -160,7 +172,9 @@ public interface DataTableReader {
 
                 ColumnDefinition column = requestColumns[colIndex];
 
-                if (column.isNullable()) {
+                // P1: read pre-computed nullability instead of dispatching
+                // column.isNullable() once per cell.
+                if (nullableMask[i]) {
                     // FIXME what if it's large object(e.g. blob, clob etc.)?
                     if (isNull(rowCount, index, column)) {
                         if (params.nullAsDefault()) {
@@ -179,10 +193,19 @@ public interface DataTableReader {
             }
 
             if (++rowCount % batchSize == 0) {
+                // P2: seed the next batch's buffer with the actual byte count of the
+                // batch we just flushed. This avoids ByteBuffer (Netty Buffer) capacity
+                // doubling for every batch after the first, since the high-water mark
+                // is a much better predictor than the static row-width estimate.
+                int actualBatchSize = buffer.length();
                 writer.write(buffer);
                 awaitDrain(dataSourceId, writer);
 
-                buffer = ByteBuffer.newInstance(estimatedBufferSize, timezone);
+                int nextHint = actualBatchSize > estimatedBufferSize ? actualBatchSize : estimatedBufferSize;
+                if (nextHint > maxBufferSizeHint) {
+                    nextHint = maxBufferSizeHint;
+                }
+                buffer = ByteBuffer.newInstance(nextHint, timezone);
             }
         }
 
