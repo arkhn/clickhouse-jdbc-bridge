@@ -1,147 +1,89 @@
-# clickhouse-jdbc-bridge benchmark suite
+# Benchmark suite
 
-End-to-end benchmark stack for the bridge against SQL Server (primary) and Oracle (secondary).
-PostgreSQL and MySQL are intentionally *not* covered — ClickHouse has native `postgresql()` and
-`mysql()` table functions, so the JDBC bridge is rarely the production choice for those. The
-realistic deployment is "CH talking to a non-natively-supported RDBMS over JDBC", which is
-exactly SQL Server and Oracle.
+End-to-end bench for `clickhouse-jdbc-bridge` against SQL Server and Oracle —
+the realistic upstreams where the bridge actually matters in production
+(PostgreSQL and MySQL have native CH integrations).
 
 ## What it measures
 
-- **Speed** — p50/p95/p99 latency, queries/sec, requests/sec
-- **RAM** — JVM heap, GC pause rate, container RSS (cAdvisor)
-- **Stability** — error rate, FD/thread/heap drift over soak runs, bridge crash detection (OOMKill)
+- **Speed** — p50/p95/p99 latency, queries/sec
+- **RAM** — JVM heap, GC pause rate, container RSS
+- **Stability** — error rate, FD/thread/heap drift, bridge OOMKill detection
 
 ## Stack
 
-| service       | image                                        | role                                    |
-|---------------|----------------------------------------------|-----------------------------------------|
-| clickhouse    | `clickhouse/clickhouse-server:25.8`          | query driver via `clickhouse benchmark` |
-| jdbc-bridge   | `arkhn/clickhouse-jdbc-bridge:bench`         | system under test                       |
-| sqlserver     | `mcr.microsoft.com/mssql/server:2022-latest` | primary upstream JDBC source            |
-| oracle        | `gvenzl/oracle-free:23-slim`                 | secondary upstream JDBC source          |
-| prometheus    | `prom/prometheus:v2.55.1`                    | metrics scrape                          |
-| grafana       | `grafana/grafana:11.3.0`                     | dashboards (http://localhost:3001)      |
-| cadvisor      | `gcr.io/cadvisor/cadvisor:v0.49.1`           | per-container cgroup stats              |
+| service | image | role |
+|---|---|---|
+| clickhouse | `clickhouse/clickhouse-server:25.8` | query driver via `clickhouse benchmark` |
+| jdbc-bridge | `arkhn/clickhouse-jdbc-bridge:bench` | system under test |
+| sqlserver | `mcr.microsoft.com/mssql/server:2022-latest` | primary upstream |
+| oracle | `gvenzl/oracle-free:23-slim` | secondary upstream |
+| prometheus / grafana / cadvisor | — | metrics + dashboards |
 
-Build the bridge image first (uses the project's full Dockerfile target):
+Build the bridge image once: `docker build --target full -t arkhn/clickhouse-jdbc-bridge:bench ../..`.
 
-```bash
-docker build --target full -t arkhn/clickhouse-jdbc-bridge:bench ../..
-```
-
-## Apple Silicon note
-
-The bridge `Dockerfile` builds cleanly on arm64 (base is `eclipse-temurin:25-jammy`, which is
-multi-arch upstream), so a local arm64 build via `docker buildx build --platform linux/arm64
---target full -t arkhn/clickhouse-jdbc-bridge:bench .` runs natively on M-series. Released
-images on Docker Hub remain `linux/amd64` only — there's no need to publish multi-arch since
-the use case is local benchmarking. `clickhouse` is multi-arch upstream. `oracle`
-(gvenzl/oracle-free) is multi-arch. The remaining emulated service is `sqlserver` —
-`mcr.microsoft.com/mssql/server` is amd64-only and runs under QEMU on arm64 hosts, which
-dominates the wall-clock cost of SQL Server workloads on Apple Silicon. The harness still sets
-`emulated=true` on the run summary whenever any container is non-native, so emulated numbers
-aren't mistaken for real ones — use x86 hardware (or a remote runner) for publishable SQL
-Server figures. Oracle-only runs on Apple Silicon are fully native.
+On Apple Silicon: `clickhouse`, `oracle`, and the bridge run natively;
+**`sqlserver` is amd64-emulated** and dominates the wall-clock for SQL Server
+workloads. Numbers from runs touching sqlserver are directional only —
+re-run on x86 for publishable figures. The harness flags `emulated=true` in
+the summary automatically.
 
 ## Usage
 
-### Smoke run (everything default-sized)
-
 ```bash
+# bring up stack + load 1M rows once
+docker compose up -d
+./datagen/load.sh --rows 1000000
+
+# functional smoke across all workloads (~5 min)
 ./run.sh --workloads W1,W2,W3,W4,W5,Wsoak \
          --duration 60 --concurrency 4 \
          --w3-limits 100000,500000 --w5-batches 100,1000 \
          --label smoke
-```
 
-### Gate (apply thresholds.yaml after the run)
+# JVM/param tuning grid (~25 min, full-scan only, drives all 5 phases)
+./scripts/grid-search.sh prod-tune
 
-```bash
-./run.sh --workloads W1,W2,W3,W4,W5,Wsoak --duration 60 --label my-run --gate
-# or separately:
+# regression diff between two runs (exits non-zero on regress)
+./run.sh compare baseline candidate
+
+# pass/fail gates from thresholds.yaml (exits non-zero on fail)
 ./run.sh gate my-run
 ```
 
-### Compare two runs
-
-```bash
-./run.sh compare baseline rerun [--regress-pct 15]
-# exits non-zero if any metric in `rerun` regresses past --regress-pct vs `baseline`
-```
-
-### Load data only
-
-```bash
-./datagen/load.sh --rows 1000000             # 1M rows into both upstreams
-./datagen/load.sh --rows 100000 --only mssql # only one side
-```
-
-Results land under `results/<label>/`:
-- `summary.md` — human-readable
-- `metrics.tsv` — tab-separated, easy to script against
-- `W*/snapshots/` — raw `/metrics` snapshots + GC log tail
-- `ps.txt` — container state at run time
-
-Dashboards at <http://localhost:3001>. Prometheus at <http://localhost:9090>.
+Results land under `results/<label>/`: `summary.md` (human), `metrics.tsv`
+(machine), `cells/*.txt` (raw). Dashboards: <http://localhost:3001>.
 
 ## Workloads
 
-| ID    | What                                               | Stresses                                                 |
-|-------|----------------------------------------------------|----------------------------------------------------------|
-| W1    | `ab` against `/ping`                               | Vert.x request loop only, no JDBC                        |
-| W2    | CH → bridge → `WHERE id = ?` (random)              | HikariCP pool reuse, `/columns_info`, 1-row serialization |
-| W3    | CH → bridge → `SELECT * LIMIT N`                   | RowBinary streaming, heap pressure on large result sets  |
-| W4    | CH → bridge → `wide_types`                         | TypeUtils conversion path (every JDBC type)              |
-| W5    | CH → bridge → `INSERT batches` via JDBC engine     | HikariCP write path, prepared-statement reuse            |
-| Wsoak | sustained W2 with FD/thread/heap drift snapshots   | Slow-leak detection (use `--duration 1800` for real)     |
+| id | path | stresses |
+|---|---|---|
+| W1 | `ab` against `/ping` | Vert.x request loop only |
+| W2 | `WHERE id = ?` through CH | pool reuse, /columns_info, 1-row serialization |
+| W3 | `SELECT * LIMIT N` through CH | RowBinary streaming, heap pressure |
+| W4 | `wide_types` through CH | every JDBC type-mapping path |
+| W5 | `INSERT batches` via JDBC engine | HikariCP write path, prepared-stmt reuse |
+| Wsoak | long-running W2 with drift checks | slow-leak detection (`--duration 1800` for real) |
 
-## Findings surfaced so far
-
-- **Bridge streams W3 — does not buffer the full result set.** Heap stays ~300 MB regardless
-  of `LIMIT 100k` vs `LIMIT 1M`; throughput is upstream-bound, not bridge-bound.
-- **Bridge OOMs at `--concurrency 10 --w3-limits 1000000`** on the default 1.5 GB container cap.
-  The harness's `ensure_bridge` detects and restarts; the restart is recorded in `summary.md`.
-- **W4 surfaces real bridge gaps**: SQL Server `DATETIMEOFFSET` (type −155) and Oracle
-  `BINARY_FLOAT`/`BINARY_DOUBLE` (types 100/101) aren't in `TypeUtils`. The workload skips them
-  in its query rather than failing silently — fix in `TypeUtils` is a follow-up.
-- **W5 oracle b100 has p99=6.3 s vs b1000 p99=21 ms** — larger batches reduce HikariCP
-  pool contention more than they add per-batch latency.
-
-## Files
+## Layout
 
 ```
 misc/bench/
-├── docker-compose.yml          # stack definition
-├── run.sh                      # main harness
-├── thresholds.yaml             # pass/fail gates
-├── README.md                   # this file
-├── bridge-config/              # mounted into the bridge container
-│   ├── server.json             # JSON config: timeouts, repositories, extensions
-│   ├── httpd.json
-│   ├── vertx.json              # worker pool / event-loop tuning
-│   └── datasources/
-│       ├── mssql.json
-│       └── oracle.json
-├── ch-config/bench.xml         # CH server config (jdbc_bridge + prometheus port)
-├── datagen/
-│   ├── init-mssql.sql
-│   ├── init-oracle.sql
-│   └── load.sh
-├── workloads/                  # one script per workload, all idempotent
-│   ├── w1-ping.sh
-│   ├── w2-point-lookup.sh
-│   ├── w3-bulk-read.sh
-│   ├── w4-wide-types.sh
-│   ├── w5-mutation.sh
-│   ├── wsoak.sh
-│   ├── _parse-bench.sh         # helper: extracts queries/qps/p99 from CH bench text
-│   └── snapshot-metrics.sh
-├── lib/
-│   ├── compare.py              # `./run.sh compare` implementation
-│   └── gate.py                 # threshold evaluation
+├── docker-compose.yml          stack definition
+├── run.sh                      main harness (workloads, compare, gate)
+├── thresholds.yaml             pass/fail gates
+├── bridge-config/              mounted into the bridge container
+├── ch-config/bench.xml         CH server config (jdbc_bridge + prometheus port)
+├── datagen/                    init-mssql.sql, init-oracle.sql, load.sh
+├── workloads/                  one script per workload (idempotent)
+├── lib/                        compare.py, gate.py
+├── scripts/grid-search.sh      5-phase JVM/param tuning sweep
 ├── prometheus/prometheus.yml
-└── grafana/
-    ├── provisioning/
-    └── dashboards/bridge.json
+└── grafana/                    provisioning + dashboards/bridge.json
 ```
+
+## Tuning recommendations
+
+Live in `DEPLOYMENT.md` at the repo root. They're derived from running
+`scripts/grid-search.sh` and re-derived whenever that grid is rerun on real
+hardware.
