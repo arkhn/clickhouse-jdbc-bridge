@@ -127,27 +127,41 @@ public abstract class AbstractBridgeIT {
      * The warmup uses the test's actual {@link #smokeQuery()} (rather than a
      * trivial SELECT 1) so the Hikari pool, the column inference path, and
      * the schema-cache are all primed by the time the first @Test runs.
+     *
+     * Requires {@code REQUIRED_OK} consecutive 200+non-empty responses before
+     * declaring the datasource ready: in CI we've observed a single
+     * post-cold-start success followed by an empty body on the very next
+     * call (Hikari evicts a half-initialised connection? type-cache miss?),
+     * and a single-shot warmup races right through it. Two successes in a
+     * row is cheap and catches that window.
      */
     private void warmupDatasource() throws Exception {
+        final int REQUIRED_OK = 2;
+        int consecutiveOk = 0;
         int last4xx5xx = 0;
         Exception lastEx = null;
         String query = smokeQuery();
-        for (int attempt = 0; attempt < 30; attempt++) {
+        for (int attempt = 0; attempt < 40; attempt++) {
             try {
                 ResponseAndBody r = rawPostQueryWithStatus(getDatasourceName(), query);
                 if (r.status == 200 && r.body != null && r.body.length() > 0) {
-                    log.info("[{}] Datasource ready after {} warmup attempt(s)",
-                            getDatasourceName(), attempt + 1);
-                    return;
+                    if (++consecutiveOk >= REQUIRED_OK) {
+                        log.info("[{}] Datasource ready after {} warmup attempt(s)",
+                                getDatasourceName(), attempt + 1);
+                        return;
+                    }
+                } else {
+                    consecutiveOk = 0;
+                    last4xx5xx = r.status;
                 }
-                last4xx5xx = r.status;
             } catch (Exception e) {
+                consecutiveOk = 0;
                 lastEx = e;
             }
             Thread.sleep(500);
         }
         String msg = "Datasource [" + getDatasourceName() + "] not ready after warmup; "
-                + "last status=" + last4xx5xx;
+                + "last status=" + last4xx5xx + ", consecutive successes=" + consecutiveOk;
         if (lastEx != null) {
             throw new IllegalStateException(msg + ", last error: " + lastEx, lastEx);
         }
