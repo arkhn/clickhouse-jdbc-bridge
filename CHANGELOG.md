@@ -1,3 +1,9 @@
+## [1.1.0-rc.7](https://github.com/arkhn/clickhouse-jdbc-bridge/compare/v1.1.0-rc.6...v1.1.0-rc.7) (2026-05-18)
+
+### Bug Fixes
+
+* **jdbc:** apply Oracle EngineDefaults to the legacy driver class too ([0bdf3ca](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/0bdf3ca39445c8c7f9609160c802577afa8ec009))
+
 ## [1.1.0-rc.6](https://github.com/arkhn/clickhouse-jdbc-bridge/compare/v1.1.0-rc.5...v1.1.0-rc.6) (2026-05-18)
 
 ### Bug Fixes
