@@ -1,3 +1,9 @@
+## [1.1.0-rc.5](https://github.com/arkhn/clickhouse-jdbc-bridge/compare/v1.1.0-rc.4...v1.1.0-rc.5) (2026-05-18)
+
+### Bug Fixes
+
+* **it:** warm up the datasource before tests + remove Oracle commit() ([fdceef4](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/fdceef407d7259200110ad9df2a67fe088cb13e1))
+
 ## [1.1.0-rc.4](https://github.com/arkhn/clickhouse-jdbc-bridge/compare/v1.1.0-rc.3...v1.1.0-rc.4) (2026-05-18)
 
 ### Bug Fixes
