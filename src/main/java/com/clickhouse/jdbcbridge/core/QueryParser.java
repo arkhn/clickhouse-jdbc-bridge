@@ -170,11 +170,21 @@ public class QueryParser {
             // assume quote is just one character and it always exists
             char quote = query.charAt(index++);
 
-            // FIXME what if schema contains '.'?
-            int dotIndex = query.indexOf('.', index);
+            // Locate the schema/table separator — a literal dot wedged between
+            // a closing quote and an opening quote. Schema identifiers may
+            // themselves contain dots, so scan past them until we find the
+            // quote-dot-quote pattern.
+            int dotIndex = -1;
+            for (int i = index; i < len - 1; i++) {
+                if (query.charAt(i) == '.'
+                        && query.charAt(i - 1) == quote
+                        && query.charAt(i + 1) == quote) {
+                    dotIndex = i;
+                    break;
+                }
+            }
 
-            if (dotIndex > index && len > dotIndex && query.charAt(dotIndex - 1) == quote
-                    && query.charAt(dotIndex + 1) == quote) { // has schema
+            if (dotIndex > index) { // has schema
                 schema = query.substring(index, dotIndex - 1);
             }
         }

@@ -99,6 +99,15 @@ public class QueryParserTest {
         String schema = "schema";
         assertEquals(QueryParser.extractSchemaName("SELECT * FROM " + "`" + schema + "`.`table`"), schema);
         assertEquals(QueryParser.extractSchemaName("SELECT * FROM " + "\"" + schema + "\".\"table\""), schema);
+
+        // Schema name containing a literal dot must be returned in full.
+        // The naive scanner stops at the first '.' inside the schema identifier
+        // and returns "my" instead of "my.schema".
+        String dottedSchema = "my.schema";
+        assertEquals(QueryParser.extractSchemaName(
+                "SELECT * FROM " + "`" + dottedSchema + "`.`table`"), dottedSchema);
+        assertEquals(QueryParser.extractSchemaName(
+                "SELECT * FROM " + "\"" + dottedSchema + "\".\"table\""), dottedSchema);
     }
 
     @Test(groups = { "unit" })
