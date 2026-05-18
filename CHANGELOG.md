@@ -1,3 +1,11 @@
+## [1.1.0-rc.8](https://github.com/arkhn/clickhouse-jdbc-bridge/compare/v1.1.0-rc.7...v1.1.0-rc.8) (2026-05-18)
+
+### Bug Fixes
+
+* **it:** keep PostgresIT smoke schema to basic types ([c458eeb](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/c458eebe0fb896fa94e4333eec97e63cf793139b)), closes [#5](https://github.com/arkhn/clickhouse-jdbc-bridge/issues/5)
+* **it:** require 2 consecutive successful warmup probes ([1346487](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/1346487e505a68236c9c9b9a22d1b6c9aa25d172)), closes [#5](https://github.com/arkhn/clickhouse-jdbc-bridge/issues/5)
+* **jdbc:** stop hardcoding connectionTestQuery=SELECT 1 for every datasource ([c80479e](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/c80479e5eb1575c6dc01a0c82f76599fda75610b))
+
 ## [1.1.0-rc.7](https://github.com/arkhn/clickhouse-jdbc-bridge/compare/v1.1.0-rc.6...v1.1.0-rc.7) (2026-05-18)
 
 ### Bug Fixes
