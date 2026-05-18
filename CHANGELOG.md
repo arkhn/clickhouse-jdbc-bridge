@@ -1,3 +1,9 @@
+## [1.1.0-rc.9](https://github.com/arkhn/clickhouse-jdbc-bridge/compare/v1.1.0-rc.8...v1.1.0-rc.9) (2026-05-18)
+
+### Bug Fixes
+
+* **it:** widen bridge POST timeouts + retry first MsSqlIT smoke once ([3c411d4](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/3c411d4fe64f0cdebc1999026d5a87b96b63d448))
+
 ## [1.1.0-rc.8](https://github.com/arkhn/clickhouse-jdbc-bridge/compare/v1.1.0-rc.7...v1.1.0-rc.8) (2026-05-18)
 
 ### Bug Fixes
