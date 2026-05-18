@@ -138,7 +138,11 @@ public interface DataTableReader {
         }
 
         // now let's read rows
-        int rowCount = params.isMutation() ? 0 : this.skipRows(params);
+        int rowsSkipped = params.isMutation() ? 0 : this.skipRows(params);
+        // Reset processed-row counter to 0 so batch boundaries (++rowCount %
+        // batchSize == 0) align with rows actually streamed in this request,
+        // not with the absolute row index in the underlying result.
+        int rowCount = 0;
         int batchSize = params.getBatchSize();
         if (batchSize <= 0) {
             batchSize = 1;
@@ -153,7 +157,14 @@ public interface DataTableReader {
         final int maxBufferSizeHint = 16 * 1024 * 1024;
 
         ByteBuffer buffer = ByteBuffer.newInstance(estimatedBufferSize, timezone);
-        boolean skipped = rowCount > 0;
+        // Position semantics ("start AT row N"): cursor is left AT the first row
+        // to read, so we must process it before the next nextRow() call.
+        // Offset semantics ("skip N rows, start at N+1"): cursor is left AT the
+        // last skipped row, so we let the while loop call nextRow() normally.
+        // params.getOffset() < 0 takes the JDBC absolute()-from-end path (see
+        // JdbcDataSource.skipRows) which behaves like position-mode.
+        boolean positionMode = params.getPosition() != 0 || params.getOffset() < 0;
+        boolean skipped = positionMode && rowsSkipped > 0;
         while (skipped || nextRow()) {
             skipped = false;
 

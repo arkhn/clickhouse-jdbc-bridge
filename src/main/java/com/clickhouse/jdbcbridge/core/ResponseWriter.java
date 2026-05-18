@@ -48,6 +48,16 @@ public class ResponseWriter {
         }
     }
 
+    // Test seam: skip HTTP-side init so subclasses can fake the response stream
+    // without standing up a real Vert.x HttpServerResponse. Subclasses MUST override
+    // every method on this class that touches `response`.
+    protected ResponseWriter() {
+        this.response = null;
+        this.options = null;
+        this.timeout = 0L;
+        this.startTime = System.currentTimeMillis();
+    }
+
     public StreamOptions getOptions() {
         return this.options;
     }
