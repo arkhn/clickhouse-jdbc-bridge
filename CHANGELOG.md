@@ -1,3 +1,13 @@
+## [1.1.0-rc.6](https://github.com/arkhn/clickhouse-jdbc-bridge/compare/v1.1.0-rc.5...v1.1.0-rc.6) (2026-05-18)
+
+### Bug Fixes
+
+* **it:** warmup must check 200 status, not just non-empty body ([9234537](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/923453756344355f58807eed2e9cd498c8c9a33d))
+
+### Features
+
+* **jdbc:** per-driver connectionTestQuery defaults + 404 for unknown datasource ([5f3fbad](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/5f3fbadea75ef4baa0518c43937e97732bbaeb20))
+
 ## [1.1.0-rc.5](https://github.com/arkhn/clickhouse-jdbc-bridge/compare/v1.1.0-rc.4...v1.1.0-rc.5) (2026-05-18)
 
 ### Bug Fixes
