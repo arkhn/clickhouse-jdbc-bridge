@@ -1,5 +1,6 @@
 #
-# Copyright (C) 2019-2025, Zhichun Wu
+# Copyright (C) 2019-2021, Zhichun Wu
+# Copyright (C) 2024-2026, Arkhn
 #
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
