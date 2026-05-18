@@ -57,15 +57,22 @@ public class DataSourceStatsTest {
     }
 
     @Test(groups = { "unit" })
-    public void exposesDataSourceConfigSnapshots() {
+    public void exposesDataSourceConfigSnapshotsAsJson() {
         NamedDataSource ds = buildDataSource("snap");
         DataSourceStats stats = new DataSourceStats("snap", ds);
 
-        // We don't pin exact JSON shape (NamedDataSource controls serialization),
-        // just that the getter pipeline is wired and yields non-null strings.
-        assertNotNull(stats.getDefaults());
-        assertNotNull(stats.getParameters());
-        assertNotNull(stats.getCustomColumns());
+        // NamedDataSource's *AsJsonString() methods emit JSON objects/arrays.
+        // Asserting the shape (not just non-null) catches a regression where
+        // a getter starts returning a raw stringification or "null".
+        assertTrue(stats.getDefaults().startsWith("{"),
+                "defaults snapshot must be a JSON object, got: " + stats.getDefaults());
+        assertTrue(stats.getParameters().startsWith("{"),
+                "parameters snapshot must be a JSON object, got: " + stats.getParameters());
+        assertTrue(stats.getCustomColumns().startsWith("["),
+                "customColumns snapshot must be a JSON array, got: " + stats.getCustomColumns());
+        // cacheUsage / poolUsage are free-form strings from upstream — pin
+        // only that the wiring delivers a non-null value (the NamedDataSource
+        // contract returns "" for an unconfigured pool, never null).
         assertNotNull(stats.getCacheUsage());
         assertNotNull(stats.getPoolUsage());
     }

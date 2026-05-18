@@ -241,9 +241,15 @@ public class DataTypeConverterTest {
     }
 
     @Test(groups = { "unit" })
-    public void toPowerQueryTypeIsAliasOfToMType() {
-        for (DataType t : DataType.values()) {
-            assertEquals(CONV.toPowerQueryType(t), CONV.toMType(t), t.name());
-        }
+    public void toPowerQueryTypeReturnsConcreteMTypeNames() {
+        // Pin concrete outputs so a future change to toPowerQueryType — e.g.
+        // returning a different Power Query namespace — trips this test
+        // instead of silently mirroring whatever toMType is doing.
+        assertEquals(CONV.toPowerQueryType(DataType.Str), DataTypeConverter.M_TYPE_TEXT);
+        assertEquals(CONV.toPowerQueryType(DataType.Int32), DataTypeConverter.M_FACET_INT32);
+        assertEquals(CONV.toPowerQueryType(DataType.Float64), DataTypeConverter.M_FACET_DOUBLE);
+        assertEquals(CONV.toPowerQueryType(DataType.Decimal256), DataTypeConverter.M_TYPE_NUMBER);
+        assertEquals(CONV.toPowerQueryType(DataType.Date), DataTypeConverter.M_TYPE_DATE);
+        assertEquals(CONV.toPowerQueryType(DataType.DateTime64), DataTypeConverter.M_TYPE_DATETIME);
     }
 }
