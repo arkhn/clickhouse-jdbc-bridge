@@ -327,6 +327,17 @@ public abstract class AbstractBridgeIT {
         return rawPostQueryWithStatus(connectionString, tableOrSql).body;
     }
 
+    // HTTP-client timeouts for a single bridge POST. Both phases (response
+    // head + body) were 30s, which is the same budget HikariCP uses for
+    // connectionTimeout — a cold-connection acquisition that consumes most
+    // of that 30s leaves the bridge zero headroom to stream the response
+    // body before the test bails. Post-merge CI on master hit this as a
+    // bodyFuture timeout on MsSqlIT.testBridgeQueryReturnsBytes (where
+    // mssql-jdbc's TLS prelogin is the slow path). 60s on both phases
+    // decouples the test-side timeout from Hikari's internal budget.
+    private static final int HTTP_RESPONSE_TIMEOUT_SECONDS = 60;
+    private static final int HTTP_BODY_TIMEOUT_SECONDS = 60;
+
     private ResponseAndBody rawPostQueryWithStatus(String connectionString, String tableOrSql)
             throws Exception {
         HttpClient client = vertx.createHttpClient();
@@ -342,12 +353,13 @@ public abstract class AbstractBridgeIT {
                 })
                 .onFailure(respFuture::completeExceptionally);
 
-        HttpClientResponse resp = respFuture.get(30, TimeUnit.SECONDS);
+        HttpClientResponse resp = respFuture.get(HTTP_RESPONSE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
         CompletableFuture<String> bodyFuture = new CompletableFuture<>();
         resp.body()
                 .onSuccess(b -> bodyFuture.complete(b.toString()))
                 .onFailure(bodyFuture::completeExceptionally);
-        return new ResponseAndBody(resp.statusCode(), bodyFuture.get(30, TimeUnit.SECONDS));
+        return new ResponseAndBody(resp.statusCode(),
+                bodyFuture.get(HTTP_BODY_TIMEOUT_SECONDS, TimeUnit.SECONDS));
     }
 
     private String doPostQuery(String connectionString, String tableOrSql, boolean assert200)
@@ -379,7 +391,21 @@ public abstract class AbstractBridgeIT {
 
     @Test(groups = { "sit" })
     public void testBridgeQueryReturnsBytes() throws Exception {
-        String body = postQuery(getDatasourceName(), smokeQuery());
+        // One retry on transient failure: warmup proved the bridge works,
+        // but MsSqlIT has been seen to hit a cold-connection / streaming
+        // stall on the very first post-warmup call (Hikari acquiring a
+        // fresh JDBC connection after a brief idle, mssql-jdbc prelogin
+        // is slow on CI). A single retry rides out that one-shot blip
+        // without weakening the assertion.
+        String body;
+        try {
+            body = postQuery(getDatasourceName(), smokeQuery());
+        } catch (Exception first) {
+            log.warn("[{}] First smoke query failed ({}); retrying once",
+                    getDatasourceName(), first.toString());
+            Thread.sleep(1000);
+            body = postQuery(getDatasourceName(), smokeQuery());
+        }
         assertNotNull(body);
         assertTrue(body.length() > 0, "expected non-empty response from [" + smokeQuery() + "]");
     }
