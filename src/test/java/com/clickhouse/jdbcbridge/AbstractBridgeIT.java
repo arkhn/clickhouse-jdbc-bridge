@@ -117,34 +117,50 @@ public abstract class AbstractBridgeIT {
     }
 
     /**
-     * Poll the datasource via the same code path the tests use until it returns
-     * a non-empty body. The bridge serves /ping as soon as the HTTP server binds,
-     * but datasource JSON files are loaded asynchronously by JsonFileRepository
-     * — so /ping == 200 does NOT imply that {@code jdbc('mydb', ...)} can
-     * resolve the name yet. Without this loop, the first @Test method races the
-     * file scanner and frequently sees an empty body.
+     * Poll the datasource via the same code path the tests use until it both
+     * returns HTTP 200 and produces a non-empty body. The bridge serves /ping
+     * as soon as the HTTP server binds, but datasource JSON files are loaded
+     * asynchronously by JsonFileRepository — so /ping == 200 does NOT imply
+     * that {@code jdbc('mydb', ...)} can resolve the name yet. Without this
+     * loop the first @Test method races the file scanner.
+     *
+     * The warmup uses the test's actual {@link #smokeQuery()} (rather than a
+     * trivial SELECT 1) so the Hikari pool, the column inference path, and
+     * the schema-cache are all primed by the time the first @Test runs.
      */
     private void warmupDatasource() throws Exception {
-        Exception last = null;
+        int last4xx5xx = 0;
+        Exception lastEx = null;
+        String query = smokeQuery();
         for (int attempt = 0; attempt < 30; attempt++) {
             try {
-                String body = rawPostQuery(getDatasourceName(), "SELECT 1");
-                if (body != null && body.length() > 0) {
+                ResponseAndBody r = rawPostQueryWithStatus(getDatasourceName(), query);
+                if (r.status == 200 && r.body != null && r.body.length() > 0) {
                     log.info("[{}] Datasource ready after {} warmup attempt(s)",
                             getDatasourceName(), attempt + 1);
                     return;
                 }
+                last4xx5xx = r.status;
             } catch (Exception e) {
-                last = e;
+                lastEx = e;
             }
             Thread.sleep(500);
         }
-        if (last != null) {
-            throw new IllegalStateException(
-                    "Datasource [" + getDatasourceName() + "] never returned data; last error: " + last, last);
+        String msg = "Datasource [" + getDatasourceName() + "] not ready after warmup; "
+                + "last status=" + last4xx5xx;
+        if (lastEx != null) {
+            throw new IllegalStateException(msg + ", last error: " + lastEx, lastEx);
         }
-        throw new IllegalStateException(
-                "Datasource [" + getDatasourceName() + "] never returned a non-empty body after warmup");
+        throw new IllegalStateException(msg);
+    }
+
+    private static final class ResponseAndBody {
+        final int status;
+        final String body;
+        ResponseAndBody(int status, String body) {
+            this.status = status;
+            this.body = body;
+        }
     }
 
     @AfterClass(alwaysRun = true, groups = { "sit" })
@@ -291,14 +307,13 @@ public abstract class AbstractBridgeIT {
 
     /**
      * Same as {@link #postQuery(String, String)} but does not assert 200; the
-     * caller decides what to do with non-200 responses. Used by the
-     * datasource-warmup loop.
+     * caller decides what to do with non-200 responses.
      */
     protected String rawPostQuery(String connectionString, String tableOrSql) throws Exception {
-        return doPostQuery(connectionString, tableOrSql, false);
+        return rawPostQueryWithStatus(connectionString, tableOrSql).body;
     }
 
-    private String doPostQuery(String connectionString, String tableOrSql, boolean assert200)
+    private ResponseAndBody rawPostQueryWithStatus(String connectionString, String tableOrSql)
             throws Exception {
         HttpClient client = vertx.createHttpClient();
         CompletableFuture<HttpClientResponse> respFuture = new CompletableFuture<>();
@@ -314,15 +329,21 @@ public abstract class AbstractBridgeIT {
                 .onFailure(respFuture::completeExceptionally);
 
         HttpClientResponse resp = respFuture.get(30, TimeUnit.SECONDS);
-        if (assert200) {
-            assertEquals(resp.statusCode(), 200,
-                    "Expected 200 from bridge for [" + tableOrSql + "]");
-        }
         CompletableFuture<String> bodyFuture = new CompletableFuture<>();
         resp.body()
                 .onSuccess(b -> bodyFuture.complete(b.toString()))
                 .onFailure(bodyFuture::completeExceptionally);
-        return bodyFuture.get(30, TimeUnit.SECONDS);
+        return new ResponseAndBody(resp.statusCode(), bodyFuture.get(30, TimeUnit.SECONDS));
+    }
+
+    private String doPostQuery(String connectionString, String tableOrSql, boolean assert200)
+            throws Exception {
+        ResponseAndBody r = rawPostQueryWithStatus(connectionString, tableOrSql);
+        if (assert200) {
+            assertEquals(r.status, 200,
+                    "Expected 200 from bridge for [" + tableOrSql + "]; body=" + r.body);
+        }
+        return r.body;
     }
 
     // -- Standard smoke tests --
