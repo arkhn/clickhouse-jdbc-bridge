@@ -485,6 +485,13 @@ public class JdbcBridgeVerticle extends AbstractVerticle implements ExtensionMan
 
         QueryParameters params = parser.getQueryParameters();
         NamedDataSource ds = getDataSource(manager, parser.getConnectionString(), params.isDebug());
+        if (ds == null) {
+            // Unknown datasource name AND adhoc fall-through denied by AdhocPolicy:
+            // surface a 404 rather than NPE-ing inside ds.newQueryParameters(...).
+            ctx.response().setStatusCode(404)
+                    .end("Datasource [" + parser.getConnectionString() + "] not found");
+            return;
+        }
         params = ds.newQueryParameters(params);
 
         String rawSchema = parser.getRawSchema();

@@ -172,7 +172,7 @@ public class EngineDefaultsTest {
     public void testApplyToAddsAllOracleDefaultsToEmptyConfig() {
         HikariConfig c = newConfig(EngineDefaults.DRIVER_ORACLE, "jdbc:oracle:thin:@//host:1521/SVC");
         int applied = EngineDefaults.applyTo(c, V12);
-        assertEquals(applied, 6, "all 6 Oracle defaults should be applied");
+        assertEquals(applied, 7, "6 Oracle dataSource defaults + connectionTestQuery = 7");
         Properties p = c.getDataSourceProperties();
         assertEquals(p.getProperty("oracle.jdbc.defaultRowPrefetch"),         "2000");
         assertEquals(p.getProperty("oracle.jdbc.implicitStatementCacheSize"), "50");
@@ -180,21 +180,24 @@ public class EngineDefaultsTest {
         assertEquals(p.getProperty("useFetchSizeWithLongColumn"),             "true");
         assertEquals(p.getProperty("oracle.net.disableOob"),                  "true");
         assertEquals(p.getProperty("oracle.jdbc.timezoneAsRegion"),           "false");
+        assertEquals(c.getConnectionTestQuery(), "SELECT 1 FROM dual",
+                "Oracle must use SELECT 1 FROM dual (ORA-00923 if it doesn't)");
     }
 
     @Test(groups = { "unit" })
     public void testApplyToMssqlIncludesSelectMethodOnV12() {
         HikariConfig c = newConfig(EngineDefaults.DRIVER_MSSQL, "jdbc:sqlserver://host:1433;db=x");
         int applied = EngineDefaults.applyTo(c, V12);
-        assertEquals(applied, 3, "responseBuffering + useBulkCopyForBatchInsert + selectMethod");
+        assertEquals(applied, 4, "3 SQL Server defaults + connectionTestQuery = 4");
         assertEquals(c.getDataSourceProperties().getProperty("selectMethod"), "cursor");
+        assertEquals(c.getConnectionTestQuery(), "SELECT 1");
     }
 
     @Test(groups = { "unit" })
     public void testApplyToMssqlSkipsSelectMethodOnV5() {
         HikariConfig c = newConfig(EngineDefaults.DRIVER_MSSQL, "jdbc:sqlserver://host:1433;db=x");
         int applied = EngineDefaults.applyTo(c, V5);
-        assertEquals(applied, 2, "selectMethod must not be added on pre-6 driver");
+        assertEquals(applied, 3, "2 dataSource defaults (no selectMethod) + connectionTestQuery = 3");
         assertNull(c.getDataSourceProperties().getProperty("selectMethod"));
         assertEquals(c.getDataSourceProperties().getProperty("responseBuffering"), "adaptive");
     }
@@ -204,7 +207,7 @@ public class EngineDefaultsTest {
         HikariConfig c = newConfig(EngineDefaults.DRIVER_ORACLE, "jdbc:oracle:thin:@//host:1521/SVC");
         c.addDataSourceProperty("oracle.jdbc.defaultRowPrefetch", "500");
         int applied = EngineDefaults.applyTo(c, V12);
-        assertEquals(applied, 5, "user pre-set 1 of 6 keys → 5 defaults applied");
+        assertEquals(applied, 6, "user pre-set 1 of 6 dataSource keys + connectionTestQuery = 6");
         assertEquals(c.getDataSourceProperties().getProperty("oracle.jdbc.defaultRowPrefetch"), "500",
                 "user value must NOT be overwritten");
     }
@@ -215,7 +218,7 @@ public class EngineDefaultsTest {
         HikariConfig c = newConfig(EngineDefaults.DRIVER_MSSQL,
                 "jdbc:sqlserver://host:1433;databaseName=db;selectMethod=direct");
         int applied = EngineDefaults.applyTo(c, V12);
-        assertEquals(applied, 2, "selectMethod is in URL → only 2 of 3 defaults apply");
+        assertEquals(applied, 3, "selectMethod is in URL → 2 dataSource defaults + connectionTestQuery = 3");
         assertNull(c.getDataSourceProperties().getProperty("selectMethod"),
                 "engine default must NOT shadow the URL-specified value");
     }
@@ -226,7 +229,7 @@ public class EngineDefaultsTest {
         HikariConfig c = newConfig(EngineDefaults.DRIVER_MYSQL,
                 "jdbc:mysql://host:3306/db?useServerPrepStmts=false&cachePrepStmts=false");
         int applied = EngineDefaults.applyTo(c, V12);
-        assertEquals(applied, 4, "2 of 6 keys are in URL → 4 defaults applied");
+        assertEquals(applied, 5, "2 of 6 keys in URL → 4 dataSource defaults + connectionTestQuery = 5");
         assertNull(c.getDataSourceProperties().getProperty("useServerPrepStmts"));
         assertNull(c.getDataSourceProperties().getProperty("cachePrepStmts"));
         // Others are added
@@ -239,7 +242,7 @@ public class EngineDefaultsTest {
         HikariConfig c = newConfig(EngineDefaults.DRIVER_POSTGRES,
                 "jdbc:postgresql://host:5432/db?binaryTransfer=false");
         int applied = EngineDefaults.applyTo(c, V12);
-        assertEquals(applied, 2, "binaryTransfer set in URL → 2 of 3 defaults apply");
+        assertEquals(applied, 3, "binaryTransfer in URL → 2 dataSource defaults + connectionTestQuery = 3");
         assertNull(c.getDataSourceProperties().getProperty("binaryTransfer"));
     }
 
@@ -251,7 +254,7 @@ public class EngineDefaultsTest {
                 "jdbc:sqlserver://host:1433;databaseName=db;responseBuffering=full");
         c.addDataSourceProperty("useBulkCopyForBatchInsert", "false");
         int applied = EngineDefaults.applyTo(c, V12);
-        assertEquals(applied, 1, "only selectMethod should remain to be applied");
+        assertEquals(applied, 2, "selectMethod + connectionTestQuery still applied");
         assertNull(c.getDataSourceProperties().getProperty("responseBuffering"));
         assertEquals(c.getDataSourceProperties().getProperty("useBulkCopyForBatchInsert"), "false");
         assertEquals(c.getDataSourceProperties().getProperty("selectMethod"), "cursor");
@@ -262,7 +265,7 @@ public class EngineDefaultsTest {
         HikariConfig c = newConfig(EngineDefaults.DRIVER_ORACLE, "jdbc:oracle:thin:@//host:1521/SVC");
         int first = EngineDefaults.applyTo(c, V12);
         int second = EngineDefaults.applyTo(c, V12);
-        assertEquals(first, 6);
+        assertEquals(first, 7);
         assertEquals(second, 0, "second invocation must apply zero — defaults are already in place");
     }
 
@@ -274,14 +277,48 @@ public class EngineDefaultsTest {
         c.setPassword("p");
         // jdbcUrl deliberately not set
         int applied = EngineDefaults.applyTo(c, V12);
-        assertEquals(applied, 6, "absent URL must not block engine defaults from applying");
+        assertEquals(applied, 7, "absent URL must not block engine defaults from applying");
     }
 
     @Test(groups = { "unit" })
     public void testApplyToHandlesEmptyJdbcUrl() {
         HikariConfig c = newConfig(EngineDefaults.DRIVER_MSSQL, "");
         int applied = EngineDefaults.applyTo(c, V12);
-        assertEquals(applied, 3, "empty URL string must be treated as 'no overrides'");
+        assertEquals(applied, 4, "empty URL string must be treated as 'no overrides'");
+    }
+
+    // ---------- connectionTestQuery defaults ----------
+
+    @Test(groups = { "unit" })
+    public void testConnectionTestQuery_oracleUsesFromDual() {
+        // Oracle rejects bare `SELECT 1` with ORA-00923 ("FROM keyword not
+        // found"), so the dialect-correct form is non-negotiable.
+        assertEquals(EngineDefaults.defaultConnectionTestQuery(EngineDefaults.DRIVER_ORACLE),
+                "SELECT 1 FROM dual");
+    }
+
+    @Test(groups = { "unit" })
+    public void testConnectionTestQuery_otherDriversUseSelectOne() {
+        assertEquals(EngineDefaults.defaultConnectionTestQuery(EngineDefaults.DRIVER_MYSQL),    "SELECT 1");
+        assertEquals(EngineDefaults.defaultConnectionTestQuery(EngineDefaults.DRIVER_MARIADB),  "SELECT 1");
+        assertEquals(EngineDefaults.defaultConnectionTestQuery(EngineDefaults.DRIVER_POSTGRES), "SELECT 1");
+        assertEquals(EngineDefaults.defaultConnectionTestQuery(EngineDefaults.DRIVER_MSSQL),    "SELECT 1");
+    }
+
+    @Test(groups = { "unit" })
+    public void testConnectionTestQuery_unknownDriverReturnsNull() {
+        assertNull(EngineDefaults.defaultConnectionTestQuery("not.a.real.Driver"));
+        assertNull(EngineDefaults.defaultConnectionTestQuery(null));
+    }
+
+    @Test(groups = { "unit" })
+    public void testConnectionTestQuery_operatorOverrideWins() {
+        HikariConfig c = newConfig(EngineDefaults.DRIVER_ORACLE, "jdbc:oracle:thin:@//host:1521/SVC");
+        c.setConnectionTestQuery("SELECT sysdate FROM dual");
+        int applied = EngineDefaults.applyTo(c, V12);
+        assertEquals(applied, 6, "operator already set connectionTestQuery → only 6 dataSource defaults applied");
+        assertEquals(c.getConnectionTestQuery(), "SELECT sysdate FROM dual",
+                "operator value must NOT be overwritten");
     }
 
     // ---------- jdbcUrlContainsKey: substring / edge cases ----------

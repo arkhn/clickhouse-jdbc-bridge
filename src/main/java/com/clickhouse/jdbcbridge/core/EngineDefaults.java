@@ -48,6 +48,31 @@ public final class EngineDefaults {
     public static final String DRIVER_POSTGRES = "org.postgresql.Driver";
 
     /**
+     * Default {@code connectionTestQuery} per driver. HikariCP prefers
+     * {@code Connection.isValid()} when the driver implements it, but
+     * falls back to this query for validation and may run it as a
+     * keep-alive even when isValid() works. Oracle in particular rejects
+     * bare {@code SELECT 1} (ORA-00923: FROM keyword not found), so we
+     * supply the dialect-correct form. Every other driver here accepts
+     * the standard form and a defensive default doesn't hurt.
+     */
+    private static final Map<String, String> CONNECTION_TEST_QUERIES;
+    static {
+        Map<String, String> m = new HashMap<>();
+        m.put(DRIVER_ORACLE,   "SELECT 1 FROM dual");
+        m.put(DRIVER_MSSQL,    "SELECT 1");
+        m.put(DRIVER_MYSQL,    "SELECT 1");
+        m.put(DRIVER_MARIADB,  "SELECT 1");
+        m.put(DRIVER_POSTGRES, "SELECT 1");
+        CONNECTION_TEST_QUERIES = Collections.unmodifiableMap(m);
+    }
+
+    /** Visible for testing. */
+    static String defaultConnectionTestQuery(String driverClassName) {
+        return CONNECTION_TEST_QUERIES.get(driverClassName);
+    }
+
+    /**
      * Pluggable driver-major-version provider, swappable in tests so we don't
      * need a real driver on the classpath to validate version-gated defaults.
      */
@@ -109,14 +134,15 @@ public final class EngineDefaults {
     /** Version of {@link #applyTo(HikariConfig)} that takes an explicit version provider (test hook). */
     public static int applyTo(HikariConfig config, DriverVersionProvider versionProvider) {
         String driverClass = config.getDriverClassName();
+        int applied = applyConnectionTestQuery(config, driverClass);
+
         Map<String, String> defaults = forDriver(driverClass, versionProvider);
         if (defaults.isEmpty()) {
-            return 0;
+            return applied;
         }
 
         Properties userProps = config.getDataSourceProperties();
         String url = config.getJdbcUrl();
-        int applied = 0;
         for (Map.Entry<String, String> e : defaults.entrySet()) {
             String key = e.getKey();
             if (userProps != null && userProps.containsKey(key)) {
@@ -132,6 +158,25 @@ public final class EngineDefaults {
             }
         }
         return applied;
+    }
+
+    /**
+     * Apply the {@code connectionTestQuery} default for {@code driverClass} unless
+     * the operator has already set one. Returns 1 if applied, 0 otherwise.
+     */
+    private static int applyConnectionTestQuery(HikariConfig config, String driverClass) {
+        if (config.getConnectionTestQuery() != null) {
+            return 0;
+        }
+        String testQuery = CONNECTION_TEST_QUERIES.get(driverClass);
+        if (testQuery == null) {
+            return 0;
+        }
+        config.setConnectionTestQuery(testQuery);
+        if (log.isInfoEnabled()) {
+            log.info("Engine default applied for {}: connectionTestQuery = {}", driverClass, testQuery);
+        }
+        return 1;
     }
 
     // ---------------- per-engine builders ----------------
