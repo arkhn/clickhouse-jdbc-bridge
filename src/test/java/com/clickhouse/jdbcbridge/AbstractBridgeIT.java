@@ -111,7 +111,40 @@ public abstract class AbstractBridgeIT {
 
         log.info("[{}] Starting bridge on port {}", getDatasourceName(), bridgePort);
         startBridge();
-        log.info("[{}] Bridge ready", getDatasourceName());
+        log.info("[{}] Bridge ready, warming up datasource", getDatasourceName());
+        warmupDatasource();
+        log.info("[{}] Datasource warmed up", getDatasourceName());
+    }
+
+    /**
+     * Poll the datasource via the same code path the tests use until it returns
+     * a non-empty body. The bridge serves /ping as soon as the HTTP server binds,
+     * but datasource JSON files are loaded asynchronously by JsonFileRepository
+     * — so /ping == 200 does NOT imply that {@code jdbc('mydb', ...)} can
+     * resolve the name yet. Without this loop, the first @Test method races the
+     * file scanner and frequently sees an empty body.
+     */
+    private void warmupDatasource() throws Exception {
+        Exception last = null;
+        for (int attempt = 0; attempt < 30; attempt++) {
+            try {
+                String body = rawPostQuery(getDatasourceName(), "SELECT 1");
+                if (body != null && body.length() > 0) {
+                    log.info("[{}] Datasource ready after {} warmup attempt(s)",
+                            getDatasourceName(), attempt + 1);
+                    return;
+                }
+            } catch (Exception e) {
+                last = e;
+            }
+            Thread.sleep(500);
+        }
+        if (last != null) {
+            throw new IllegalStateException(
+                    "Datasource [" + getDatasourceName() + "] never returned data; last error: " + last, last);
+        }
+        throw new IllegalStateException(
+                "Datasource [" + getDatasourceName() + "] never returned a non-empty body after warmup");
     }
 
     @AfterClass(alwaysRun = true, groups = { "sit" })
@@ -163,7 +196,9 @@ public abstract class AbstractBridgeIT {
         JsonObject server = new JsonObject()
                 .put("requestTimeout", 5000)
                 .put("queryTimeout", 60000)
-                .put("configScanPeriod", 5000)
+                // 1s scan period so the IT's datasource JSON is picked up
+                // promptly. The warmupDatasource() loop still bounds the wait.
+                .put("configScanPeriod", 1000)
                 .put("serverPort", bridgePort)
                 .put("repositories", new JsonArray()
                         .add(new JsonObject()
@@ -246,9 +281,25 @@ public abstract class AbstractBridgeIT {
     /**
      * POST a form-encoded query to the bridge and return the raw response body
      * as a String. Useful for smoke / "did we get bytes" assertions; the body is
-     * in the bridge's RowBinary format and not human-parseable.
+     * in the bridge's RowBinary format and not human-parseable. Asserts the
+     * HTTP status is 200; for a retry-loop-friendly variant see
+     * {@link #rawPostQuery(String, String)}.
      */
     protected String postQuery(String connectionString, String tableOrSql) throws Exception {
+        return doPostQuery(connectionString, tableOrSql, true);
+    }
+
+    /**
+     * Same as {@link #postQuery(String, String)} but does not assert 200; the
+     * caller decides what to do with non-200 responses. Used by the
+     * datasource-warmup loop.
+     */
+    protected String rawPostQuery(String connectionString, String tableOrSql) throws Exception {
+        return doPostQuery(connectionString, tableOrSql, false);
+    }
+
+    private String doPostQuery(String connectionString, String tableOrSql, boolean assert200)
+            throws Exception {
         HttpClient client = vertx.createHttpClient();
         CompletableFuture<HttpClientResponse> respFuture = new CompletableFuture<>();
         String body = "connection_string=" + URLEncoder.encode(connectionString, "UTF-8")
@@ -263,8 +314,10 @@ public abstract class AbstractBridgeIT {
                 .onFailure(respFuture::completeExceptionally);
 
         HttpClientResponse resp = respFuture.get(30, TimeUnit.SECONDS);
-        assertEquals(resp.statusCode(), 200,
-                "Expected 200 from bridge for [" + tableOrSql + "]");
+        if (assert200) {
+            assertEquals(resp.statusCode(), 200,
+                    "Expected 200 from bridge for [" + tableOrSql + "]");
+        }
         CompletableFuture<String> bodyFuture = new CompletableFuture<>();
         resp.body()
                 .onSuccess(b -> bodyFuture.complete(b.toString()))

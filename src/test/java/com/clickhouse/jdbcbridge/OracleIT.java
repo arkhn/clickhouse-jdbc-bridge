@@ -66,7 +66,9 @@ public class OracleIT extends AbstractBridgeIT {
             s.execute("INSERT INTO test_table VALUES (1, 'a', 10, 1.5, 1.5)");
             s.execute("INSERT INTO test_table VALUES (2, 'b', 20, -2.25, 3.14159265358979)");
             s.execute("INSERT INTO test_table VALUES (3, 'c', 30, 0.0, 0.0)");
-            conn.commit();
+            // No explicit commit: DriverManager.getConnection defaults to
+            // autoCommit=true, and Oracle throws ORA-17273 if you call
+            // commit() with autoCommit on.
         }
     }
 
