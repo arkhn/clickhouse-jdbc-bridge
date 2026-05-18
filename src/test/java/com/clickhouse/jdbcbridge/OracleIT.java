@@ -18,11 +18,9 @@ package com.clickhouse.jdbcbridge;
 
 import java.sql.Connection;
 import java.sql.Statement;
-import java.time.Duration;
 
 import org.testcontainers.containers.JdbcDatabaseContainer;
 import org.testcontainers.containers.OracleContainer;
-import org.testcontainers.containers.wait.strategy.Wait;
 
 /**
  * Exercises the bridge against Oracle. Uses the {@code gvenzl/oracle-free}
@@ -36,10 +34,13 @@ public class OracleIT extends AbstractBridgeIT {
 
     @Override
     protected JdbcDatabaseContainer<?> createDatabaseContainer() {
+        // No explicit waitingFor() override: testcontainers' OracleContainer
+        // defaults to a JDBC-handshake wait which (unlike Wait.forListeningPort)
+        // doesn't false-positive while the xepdb1 service is still registering
+        // with the listener — that race was the cause of ORA-12514 in CI.
         return new OracleContainer("gvenzl/oracle-xe:21-slim-faststart")
                 .withUsername("testuser")
-                .withPassword("testpass")
-                .waitingFor(Wait.forListeningPort().withStartupTimeout(Duration.ofMinutes(5)));
+                .withPassword("testpass");
     }
 
     @Override

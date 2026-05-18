@@ -617,6 +617,17 @@
                     <skipTests>${skipTests}</skipTests>
                     <skipITs>${skipITs}</skipITs>
                     <argLine>${failsafeArgLine}</argLine>
+                    <!--
+                      One JVM per IT class. JdbcBridgeVerticle reads its
+                      `jdbc-bridge.config.dir` system property in a static
+                      final initializer, so once it's resolved to the first
+                      IT class's temp dir, every subsequent IT class would
+                      pick up that stale value (and a bridge listening on
+                      the wrong port). Forking per class keeps each IT's
+                      config dir hermetic.
+                    -->
+                    <forkCount>1</forkCount>
+                    <reuseForks>false</reuseForks>
                 </configuration>
                 <executions>
                     <execution>
