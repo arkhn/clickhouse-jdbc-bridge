@@ -396,14 +396,25 @@ public final class ByteBuffer {
     }
 
     public ByteBuffer writeBigInteger(BigInteger value, int length) {
+        // Reject values whose magnitude can't fit in `length` bytes. Silently
+        // writing more than `length` bytes would corrupt the fixed-width wire
+        // format for Int128/UInt128/Int256/UInt256.
+        if (value.bitLength() > length * 8) {
+            throw new ArithmeticException("BigInteger value [" + value
+                    + "] does not fit in " + length + " bytes");
+        }
         byte empty = value.signum() == -1 ? (byte) 0xFF : 0x00;
         byte[] bytes = value.toByteArray();
-        for (int i = bytes.length - 1; i >= 0; i--) {
+        // toByteArray() may return one extra leading sign-extension byte (0x00
+        // for positive, 0xFF for negative) when the magnitude lands on a byte
+        // boundary. Skip those extra bytes to keep the output exactly `length`
+        // bytes wide.
+        int start = bytes.length > length ? bytes.length - length : 0;
+        for (int i = bytes.length - 1; i >= start; i--) {
             writeByte(bytes[i]);
         }
-
-        // FIXME when the given (byte)length is less than bytes.length...
-        for (int i = length - bytes.length; i > 0; i--) {
+        int written = bytes.length - start;
+        for (int i = length - written; i > 0; i--) {
             writeByte(empty);
         }
 

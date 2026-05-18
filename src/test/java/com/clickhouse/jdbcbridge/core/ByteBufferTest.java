@@ -211,4 +211,36 @@ public class ByteBufferTest {
         assertEquals(buffer.readDateTime64(), xdt1);
         assertEquals(buffer.readDateTime64(), xdt2);
     }
+
+    @Test(groups = { "unit" }, expectedExceptions = ArithmeticException.class)
+    public void testWriteBigInteger_overflow_throws() {
+        // ClickHouse Int128/Int256 etc. have fixed widths; silently writing more
+        // bytes than the requested `length` would corrupt the wire format. Values
+        // that don't fit must throw rather than truncate.
+        ByteBuffer buffer = ByteBuffer.newInstance(64);
+        BigInteger tooWide = BigInteger.ONE.shiftLeft(200); // ~26 bytes serialized
+        buffer.writeBigInteger(tooWide, 16); // request only 16 bytes
+    }
+
+    @Test(groups = { "unit" })
+    public void testWriteBigInteger_exactFit_succeeds() {
+        // sanity: a value whose serialization exactly matches the requested
+        // length must succeed without padding or throwing.
+        ByteBuffer buffer = ByteBuffer.newInstance(64);
+        byte[] sixteen = new byte[16];
+        for (int i = 0; i < 16; i++) {
+            sixteen[i] = (byte) (i + 1);
+        }
+        BigInteger exact = new BigInteger(1, sixteen);
+        buffer.writeBigInteger(exact, 16);
+        assertEquals(buffer.length(), 16);
+    }
+
+    @Test(groups = { "unit" })
+    public void testWriteBigInteger_smallValue_padsToLength() {
+        // sanity: a small value (1 byte serialized) must pad up to `length`.
+        ByteBuffer buffer = ByteBuffer.newInstance(64);
+        buffer.writeBigInteger(BigInteger.valueOf(5L), 16);
+        assertEquals(buffer.length(), 16);
+    }
 }
