@@ -47,10 +47,12 @@ This project includes:
   jquery under MIT License
   JUnit under Eclipse Public License 1.0
   LatencyUtils under Public Domain, per Creative Commons CC0
+  mariadb-java-client under LGPL-2.1-or-later
   micrometer-commons under The Apache Software License, Version 2.0
   micrometer-core under The Apache Software License, Version 2.0
   micrometer-observation under The Apache Software License, Version 2.0
   micrometer-registry-prometheus under The Apache Software License, Version 2.0
+  Microsoft JDBC Driver for SQL Server under MIT License
   MySQL Connector/J under The GNU General Public License, v2 with Universal FOSS Exception, v1.0
   Netty/Buffer under Apache License, Version 2.0
   Netty/Codec under Apache License, Version 2.0
@@ -66,6 +68,7 @@ This project includes:
   Netty/Transport under Apache License, Version 2.0
   Netty/Transport/Native/Unix/Common under Apache License, Version 2.0
   ojdbc8 under Oracle Free Use Terms and Conditions (FUTC)
+  PostgreSQL JDBC Driver under BSD-2-Clause
   Prometheus Java Simpleclient under The Apache Software License, Version 2.0
   Prometheus Java Simpleclient Common under The Apache Software License, Version 2.0
   Prometheus Java Span Context Supplier - Common under The Apache Software License, Version 2.0
@@ -77,8 +80,11 @@ This project includes:
   Testcontainers :: Database-Commons under MIT
   Testcontainers :: JDBC under MIT
   Testcontainers :: JDBC :: ClickHouse under MIT
+  Testcontainers :: JDBC :: MariaDB under MIT
   Testcontainers :: JDBC :: MySQL under MIT
   Testcontainers :: JDBC :: Oracle XE under MIT
+  Testcontainers :: JDBC :: PostgreSQL under MIT
+  Testcontainers :: MS SQL Server under MIT
   Testcontainers Core under MIT
   testng under Apache License, Version 2.0
   Vert.x Bridge Common under The Apache Software License, Version 2.0 or Eclipse Public License - v 1.0
