@@ -1,3 +1,13 @@
+## [1.1.0-rc.2](https://github.com/arkhn/clickhouse-jdbc-bridge/compare/v1.1.0-rc.1...v1.1.0-rc.2) (2026-05-18)
+
+### Bug Fixes
+
+* documentation ([0f63be7](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/0f63be7a15333f0d549a7e063dad5eaf13972658))
+
+### Features
+
+* remove features impact badly security posture ([6018052](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/6018052042dd07313031833719bf542e0117304a))
+
 ## [1.1.0-rc.1](https://github.com/arkhn/clickhouse-jdbc-bridge/compare/v1.0.4...v1.1.0-rc.1) (2026-05-18)
 
 ### Bug Fixes
