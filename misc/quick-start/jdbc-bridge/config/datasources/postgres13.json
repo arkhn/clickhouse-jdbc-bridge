@@ -4,9 +4,6 @@
     "converter": {
       "mappings": [{ "nativeType": "bool", "toType": "String" }]
     },
-    "driverUrls": [
-      "https://repo1.maven.org/maven2/org/postgresql/postgresql/42.2.24/postgresql-42.2.24.jar"
-    ],
     "driverClassName": "org.postgresql.Driver",
     "jdbcUrl": "jdbc:postgresql://db-postgres13/test",
     "username": "sa",

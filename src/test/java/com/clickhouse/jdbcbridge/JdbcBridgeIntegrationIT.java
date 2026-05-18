@@ -215,8 +215,7 @@ public class JdbcBridgeIntegrationIT {
                                 .put("repository", "com.clickhouse.jdbcbridge.impl.JsonFileRepository")))
                 .put("extensions", new io.vertx.core.json.JsonArray()
                         .add(new JsonObject().put("class", "com.clickhouse.jdbcbridge.impl.JdbcDataSource"))
-                        .add(new JsonObject().put("class", "com.clickhouse.jdbcbridge.impl.ConfigDataSource"))
-                        .add(new JsonObject().put("class", "com.clickhouse.jdbcbridge.impl.ScriptDataSource")));
+                        .add(new JsonObject().put("class", "com.clickhouse.jdbcbridge.impl.ConfigDataSource")));
         
         Files.write(configSubDir.resolve("server.json"), serverConfig.encodePrettily().getBytes());
         

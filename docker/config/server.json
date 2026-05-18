@@ -22,9 +22,6 @@
     },
     {
       "class": "com.clickhouse.jdbcbridge.impl.ConfigDataSource"
-    },
-    {
-      "class": "com.clickhouse.jdbcbridge.impl.ScriptDataSource"
     }
   ]
 }

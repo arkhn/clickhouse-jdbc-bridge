@@ -224,21 +224,6 @@
         <license>Apache License, Version 2.0</license>
     </artifact>
     <artifact>
-        <groupId>javax.script</groupId>
-        <artifactId>groovy-engine</artifactId>
-        <license>BSD License</license>
-    </artifact>
-    <artifact>
-        <groupId>javax.script</groupId>
-        <artifactId>js-engine</artifactId>
-        <license>BSD License</license>
-    </artifact>
-    <artifact>
-        <groupId>javax.script</groupId>
-        <artifactId>script-api</artifactId>
-        <license>Commons Development and Distribution License, Version 1.0</license>
-    </artifact>
-    <artifact>
         <groupId>javax.servlet</groupId>
         <artifactId>jstl</artifactId>
         <license>Commons Development and Distribution License, Version 1.0</license>
@@ -737,11 +722,6 @@
         <groupId>quartz</groupId>
         <artifactId>quartz</artifactId>
         <license>Apache License, Version 2.0</license>
-    </artifact>
-    <artifact>
-        <groupId>rhino</groupId>
-        <artifactId>js</artifactId>
-        <license>Mozilla Public License, Version 1.1</license>
     </artifact>
     <artifact>
         <groupId>rome</groupId>

@@ -16,7 +16,6 @@
  */
 package com.clickhouse.jdbcbridge.core;
 
-import java.util.Map;
 import java.util.function.Consumer;
 
 import io.vertx.core.json.JsonObject;
@@ -56,11 +55,4 @@ public interface ExtensionManager {
      *                   new or changed
      */
     void registerConfigLoader(String configPath, Consumer<JsonObject> consumer);
-
-    /**
-     * Get list of named scriptable objects.
-     * 
-     * @return named scriptable objects
-     */
-    Map<String, Object> getScriptableObjects();
 }

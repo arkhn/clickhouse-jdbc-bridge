@@ -32,7 +32,8 @@ docker run -d --name ch-jdbc-bridge -p 9019:9019 arkhn/clickhouse-jdbc-bridge:la
 ```
 
 To use the slim image and supply your own drivers and datasource config from
-the host:
+the host, fetch the jars yourself (the image no longer downloads them at
+startup) and mount them in:
 
 ```bash
 wget -P drivers \
@@ -50,9 +51,11 @@ docker run -d --name ch-jdbc-bridge -p 9019:9019 \
     arkhn/clickhouse-jdbc-bridge:base
 ```
 
-You can also have the entrypoint download drivers from Maven Central at
-startup via `JDBC_DRIVERS` / `MAVEN_REPO_URL` — convenient for ephemeral
-environments, but **pin driver versions in production** (see
+For a reproducible deployment, build a derived image instead — extend
+`:base` (or `:full`) and `COPY` the driver jars into `/app/drivers` so
+versions are pinned in your image. Remote `driverUrls` and the upstream
+`JDBC_DRIVERS` / `MAVEN_REPO_URL` runtime-download env vars are not
+supported in this fork (see
 [SECURITY.md](https://github.com/arkhn/clickhouse-jdbc-bridge/blob/master/SECURITY.md#jdbc-drivers)).
 
 ### Configure ClickHouse
@@ -86,7 +89,8 @@ select * from jdbc('jdbc:mariadb://...', 'select 1');
 
 ```text
 /app
-├── drivers/         JDBC drivers
+├── drivers/         JDBC drivers loaded into the shared classloader at startup
+├── extra/           per-datasource driver jars, referenced via `driverUrls` (see README)
 ├── config/
 │   ├── datasources/ named datasources
 │   ├── schemas/     named schemas
@@ -94,6 +98,13 @@ select * from jdbc('jdbc:mariadb://...', 'select 1');
 ├── extensions/      pluggable extensions
 └── logs/            application logs
 ```
+
+`drivers/` holds the default driver set — every jar here is visible to
+every datasource. `extra/` is opt-in: jars live there until a datasource
+explicitly references them via `driverUrls: ["extra/<subdir>"]`. Use the
+second slot when you want a separate driver instance for a specific
+datasource (e.g. a legacy connector version) without polluting the shared
+classloader.
 
 Port `9019` is exposed for both ClickHouse integration and Prometheus
 scraping (`/metrics`) and probes (`/ping`).
@@ -110,8 +121,6 @@ scraping (`/metrics`) and probes (`/ping`).
 | `DRIVER_DIR` | `jdbc-bridge.driver.dir` | `drivers` | Driver directory |
 | `HTTPD_CONFIG_FILE` | `jdbc-bridge.httpd.config.file` | `httpd.json` | HTTP server configuration |
 | `JDBC_BRIDGE_JVM_OPTS` | — | — | Extra JVM args (heap, GC, system properties) |
-| `JDBC_DRIVERS` | — | — | Comma-separated Maven paths of drivers to fetch at startup |
-| `MAVEN_REPO_URL` | — | `https://repo1.maven.org/maven2` | Maven repository base URL |
 | `QUERY_CONFIG_DIR` | `jdbc-bridge.query.config.dir` | `queries` | Directory for named queries |
 | `SCHEMA_CONFIG_DIR` | `jdbc-bridge.schema.config.dir` | `schemas` | Directory for named schemas |
 | `SERVER_CONFIG_FILE` | `jdbc-bridge.server.config.file` | `server.json` | Bridge server configuration |

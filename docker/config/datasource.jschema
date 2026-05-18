@@ -521,7 +521,7 @@
           "minItems": 1
         },
         "driverUrls": {
-          "description": "List of URLs(or relative/absolute local paths) to find datasource driver.",
+          "description": "List of local filesystem paths (relative or absolute) where the JDBC driver jars live. Remote URLs (http/https/etc.) are not supported — drop the jar into the drivers/ directory or extend the base image instead.",
           "type": "array",
           "items": {
             "type": "string"
@@ -530,8 +530,7 @@
           "examples": [
             [
               "drivers/clickhouse-0.2.4",
-              "/usr/share/java/slf4j.jar",
-              "https://repo1.maven.org/maven2/net/jpountz/lz4/lz4/1.3.0/lz4-1.3.0.jar"
+              "/usr/share/java/slf4j.jar"
             ]
           ]
         },

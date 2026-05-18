@@ -35,8 +35,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.UnaryOperator;
 import java.util.stream.Stream;
 
-import javax.script.Bindings;
-
 import com.fasterxml.jackson.core.io.JsonStringEncoder;
 
 import io.micrometer.core.instrument.MeterRegistry;
@@ -305,31 +303,6 @@ public final class Utils {
                     list.add(subList.toArray(new Object[size]));
                 }
             }
-        } else if (object instanceof Bindings && isArray((Bindings) object)) { // special type of Map
-            Bindings bindings = (Bindings) object;
-            if (asColumn) {
-                for (Object value : bindings.values()) {
-                    list.add(value);
-                }
-            } else {
-                int columnsCount = columnNames.length;
-                List<Object> subList = new ArrayList<>(columnsCount);
-                boolean isFirst = true;
-                boolean notRow = true;
-                for (Object value : bindings.values()) {
-                    if (isFirst) {
-                        notRow = !isRow(value);
-                        isFirst = false;
-                    }
-
-                    addObjects(value, notRow ? subList : list, notRow, columnNames);
-                }
-
-                int size = subList.size();
-                if (size > 0) {
-                    list.add(subList.toArray(new Object[size]));
-                }
-            }
         } else if (object instanceof Map) {
             if (asColumn) {
                 list.add(object);
@@ -515,64 +488,6 @@ public final class Utils {
         }
     }
 
-    private static void appendJsonString(Bindings bindings, StringBuilder json, int depth) {
-        if (bindings == null) {
-            json.append(NULL_STRING);
-            return;
-        }
-
-        depth = checkDepth(bindings, depth);
-
-        if (isArray(bindings)) {
-            json.append('[');
-
-            boolean isNotFirst = false;
-            for (Object value : bindings.values()) {
-                if (isNotFirst) {
-                    json.append(',');
-                } else {
-                    isNotFirst = true;
-                }
-
-                if (value == null) {
-                    json.append(NULL_STRING);
-                } else if (value instanceof Bindings) {
-                    appendJsonString(bindings, json, depth);
-                } else {
-                    appendJsonString(value, json, depth);
-                }
-            }
-
-            json.append(']');
-        } else {
-            json.append('{');
-
-            boolean isNotFirst = false;
-            for (String key : bindings.keySet()) {
-                if (isNotFirst) {
-                    json.append(',');
-                } else {
-                    isNotFirst = true;
-                }
-
-                json.append('"');
-                JsonStringEncoder.getInstance().quoteAsString(key, json);
-                json.append('"').append(':');
-
-                Object value = bindings.get(key);
-                if (value == null) {
-                    json.append(NULL_STRING);
-                } else if (value instanceof Bindings) {
-                    appendJsonString((Bindings) value, json, depth);
-                } else {
-                    appendJsonString(value, json, depth);
-                }
-            }
-
-            json.append('}');
-        }
-    }
-
     public static String unescapeQuotes(String str) {
         if (str == null) {
             return EMPTY_STRING;
@@ -733,36 +648,13 @@ public final class Utils {
         return ServiceLoader.load(service, loader).iterator().next();
     }
 
-    // limit this function to only Bindings instead of Map
-    public static boolean isArray(Bindings objects) {
-        boolean isArray = true;
-
-        if (!objects.isEmpty()) {
-            int index = 0;
-            for (String key : objects.keySet()) {
-                if (!String.valueOf(index++).equals(key)) {
-                    isArray = false;
-                    break;
-                }
-            }
-        }
-
-        return isArray;
-    }
-
     public static String toJsonString(Object object) {
         if (object == null) {
             return EMPTY_STRING;
         }
 
         StringBuilder json = new StringBuilder();
-        int depth = 0;
-
-        if (object instanceof Bindings) {
-            appendJsonString((Bindings) object, json, depth);
-        } else {
-            appendJsonString(object, json, depth);
-        }
+        appendJsonString(object, json, 0);
 
         return json.toString();
     }

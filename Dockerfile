@@ -72,7 +72,7 @@ RUN apt-get update \
 	&& DEBIAN_FRONTEND=noninteractive apt-get install -y --allow-unauthenticated apache2-utils \
 		apt-transport-https curl htop iftop iptraf iputils-ping jq lsof net-tools tzdata wget \
 	&& apt-get clean \
-	&& mkdir -p $JDBC_BRIDGE_HOME/drivers \
+	&& mkdir -p $JDBC_BRIDGE_HOME/drivers $JDBC_BRIDGE_HOME/extra \
 	&& rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 COPY --from=builder --chown=root:root /build/target/clickhouse-jdbc-bridge-shaded.jar $JDBC_BRIDGE_HOME/
@@ -90,7 +90,7 @@ WORKDIR $JDBC_BRIDGE_HOME
 
 EXPOSE 9019
 
-VOLUME ["${JDBC_BRIDGE_HOME}/drivers", "${JDBC_BRIDGE_HOME}/extensions", "${JDBC_BRIDGE_HOME}/logs", "${JDBC_BRIDGE_HOME}/scripts"]
+VOLUME ["${JDBC_BRIDGE_HOME}/drivers", "${JDBC_BRIDGE_HOME}/extra", "${JDBC_BRIDGE_HOME}/extensions", "${JDBC_BRIDGE_HOME}/logs", "${JDBC_BRIDGE_HOME}/scripts"]
 
 CMD "./docker-entrypoint.sh"
 

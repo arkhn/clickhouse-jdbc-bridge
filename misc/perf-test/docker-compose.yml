@@ -97,9 +97,6 @@ services:
         curl -sSL -o /app/scripts/small-table.sql $$TEST_CONF_URL/scripts/small-table.sql;
         ./docker-entrypoint.sh
       '
-    # enable ES6 support in Nashorn
-    environment:
-      JDBC_BRIDGE_JVM_OPTS: "-Dnashorn.args=--language=es6"
     deploy:
       mode: replicated
       # docker service scale <jdbc-bridge-service>=2

@@ -10,7 +10,6 @@
   ],
   "extensions": [
     { "class": "com.clickhouse.jdbcbridge.impl.JdbcDataSource" },
-    { "class": "com.clickhouse.jdbcbridge.impl.ConfigDataSource" },
-    { "class": "com.clickhouse.jdbcbridge.impl.ScriptDataSource" }
+    { "class": "com.clickhouse.jdbcbridge.impl.ConfigDataSource" }
   ]
 }

@@ -106,8 +106,11 @@ development-only convenience.
 - Subscribe to the CVE feeds for the drivers you ship — most recent
   bridge-relevant incidents (`log4shell`, MySQL deserialisation, Postgres
   driver path traversal) live in the driver layer, not the bridge.
-- Don't load drivers from untrusted Maven coordinates at runtime via the
-  `JDBC_DRIVERS` env var on a host you don't control.
+- Remote driver loading is **not supported** in this fork. `driverUrls` and
+  `libUrls` only accept local filesystem paths; `http://` / `https://`
+  entries are rejected at startup, and the upstream `JDBC_DRIVERS` env var
+  (which `wget`-ed jars at container start) has been removed. Extend the
+  image at build time and copy your jars into `/app/drivers` instead.
 
 ### Driver `dataSourceProperties` to watch
 
@@ -130,18 +133,6 @@ are responsible for setting them safely.
 - Drop all Linux capabilities
   (`securityContext.capabilities.drop: ["ALL"]`).
 - A reference K8s manifest is in [DEPLOYMENT.md](DEPLOYMENT.md#kubernetes).
-
-### Scripting
-
-The legacy `script` / `ScriptDataSource` extension is in the process of
-being **removed**. It allowed evaluating Nashorn / JavaScript from incoming
-requests, which is effectively remote code execution against the bridge
-host. Until it is removed:
-
-- Do **not** enable it on production deployments.
-- Remove `com.clickhouse.jdbcbridge.impl.ScriptDataSource` from
-  `extensions` in `config/server.json`.
-- Delete `config/datasources/script.json`.
 
 ### Logs
 

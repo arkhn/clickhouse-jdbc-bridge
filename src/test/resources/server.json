@@ -18,10 +18,6 @@
     },
     {
       "class": "com.clickhouse.jdbcbridge.impl.ConfigDataSource"
-    },
-    {
-      "libUrls": ["extensions/script-engines"],
-      "class": "com.clickhouse.jdbcbridge.impl.ScriptDataSource"
     }
   ]
 }

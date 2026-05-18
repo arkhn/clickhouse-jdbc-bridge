@@ -14,6 +14,23 @@ backends — data warehousing, monitoring, integrity checks, federated analytics
 > and security improvements on top of the original Zhichun Wu / ClickHouse Inc.
 > codebase. See [NOTICE](NOTICE) for attribution.
 
+> [!WARNING]
+> **Removed from upstream.** This fork drops two features that exist in the
+> original [ClickHouse/clickhouse-jdbc-bridge](https://github.com/ClickHouse/clickhouse-jdbc-bridge):
+>
+> - **Scripting datasource** (`ScriptDataSource`, Rhino / `javax.script`).
+>   Upstream allowed evaluating JavaScript supplied in incoming requests,
+>   which is effectively remote code execution against the bridge host.
+> - **Remote driver / extension URLs.** `driverUrls` and `libUrls` only
+>   accept local filesystem paths now; `http://` / `https://` entries are
+>   rejected at startup. The `JDBC_DRIVERS` env var (which `wget`-ed jars
+>   from Maven Central at container start) has been removed.
+>
+> To add a JDBC driver that isn't vendored in the `:full` image, extend the
+> base image and copy your jar into `/app/drivers` (or mount a volume
+> there). If you rely on either removed feature, stay on upstream — they
+> will not work here.
+
 ## Overview
 
 ![Overview](https://user-images.githubusercontent.com/4270380/103492828-a06d1200-4e68-11eb-9287-ef830f575d3e.png)
@@ -218,13 +235,22 @@ them up automatically for autocomplete and validation.
 
 ### Driver URLs
 
+The bridge ships two driver directories with distinct roles:
+
+| Path | Loaded by | Use it for |
+|---|---|---|
+| `/app/drivers` (override: `DRIVER_DIR`) | Shared classloader, scanned at startup. Every `*.jar` becomes available to every datasource. | The default driver per backend. The `:full` image vendors the curated set here. |
+| `/app/extra` | Nothing by default — only loaded when a datasource's `driverUrls` points at it. | Per-datasource jars: alternative driver versions, vendor-specific drivers, anything you don't want in the shared classloader. |
+
+To add a driver, extend `arkhn/clickhouse-jdbc-bridge:base` (or `:full`) and
+`COPY` the jar into the appropriate directory. Only local filesystem paths
+are accepted in `driverUrls`; remote URLs (`http://`, `https://`) are
+rejected at startup.
+
 ```json
 {
-  "testdb": {
-    "driverUrls": [
-      "drivers/mariadb",
-      "https://repo1.maven.org/maven2/org/mariadb/jdbc/mariadb-java-client/3.5.4/mariadb-java-client-3.5.4.jar"
-    ],
+  "legacy-mariadb": {
+    "driverUrls": ["extra/mariadb-2.7"],
     "driverClassName": "org.mariadb.jdbc.Driver",
     "jdbcUrl": "jdbc:mariadb://host:3306/db",
     "username": "...",
@@ -232,6 +258,25 @@ them up automatically for autocomplete and validation.
   }
 }
 ```
+
+#### Running two versions of the same driver
+
+A common case is wanting one datasource on the default MariaDB 3.x driver
+(vendored in `drivers/`) and another datasource pinned to a legacy MariaDB
+2.x driver. The pattern is:
+
+1. Keep the default jar in `drivers/` (or let the `:full` image vendor it).
+2. Drop the second version into `extra/<name>/`, e.g.
+   `extra/mariadb-2.7/mariadb-java-client-2.7.4.jar`.
+3. On the datasource that needs the second version, set
+   `driverUrls: ["extra/mariadb-2.7"]` so it gets its own classloader.
+
+> [!NOTE]
+> The per-datasource classloader delegates to the shared `drivers/`
+> classloader (parent-first). If the same `Driver` class exists in **both**
+> `drivers/` and `extra/<name>/`, the parent (i.e. `drivers/`) wins and
+> the `extra/` copy is shadowed. For a truly distinct driver instance,
+> place that driver **only** in `extra/<name>/` and not in `drivers/`.
 
 Examples under [`misc/quick-start/jdbc-bridge/config`](misc/quick-start/jdbc-bridge/config).
 

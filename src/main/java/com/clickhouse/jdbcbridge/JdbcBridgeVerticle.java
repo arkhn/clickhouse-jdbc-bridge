@@ -20,9 +20,7 @@ import static com.clickhouse.jdbcbridge.core.DataType.*;
 
 import java.nio.file.Paths;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.function.Consumer;
 
@@ -45,7 +43,6 @@ import com.clickhouse.jdbcbridge.core.Utils;
 import com.clickhouse.jdbcbridge.impl.ConfigDataSource;
 import com.clickhouse.jdbcbridge.impl.JdbcDataSource;
 import com.clickhouse.jdbcbridge.impl.JsonFileRepository;
-import com.clickhouse.jdbcbridge.impl.ScriptDataSource;
 
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.binder.jvm.ClassLoaderMetrics;
@@ -167,7 +164,6 @@ public class JdbcBridgeVerticle extends AbstractVerticle implements ExtensionMan
 
             declaredExts.add(JdbcDataSource.class.getName());
             declaredExts.add(ConfigDataSource.class.getName());
-            declaredExts.add(ScriptDataSource.class.getName());
         }
 
         for (Object item : declaredExts) {
@@ -238,7 +234,7 @@ public class JdbcBridgeVerticle extends AbstractVerticle implements ExtensionMan
 
     private void startServer(JsonObject bridgeServerConfig, JsonObject httpServerConfig) {
         if (httpServerConfig.isEmpty()) {
-            // make sure we can pass long query/script by default
+            // make sure we can pass long queries by default
             httpServerConfig.put("maxInitialLineLength", 2147483647L);
         }
 
@@ -648,19 +644,6 @@ public class JdbcBridgeVerticle extends AbstractVerticle implements ExtensionMan
                 }
             });
         });
-    }
-
-    @Override
-    public Map<String, Object> getScriptableObjects() {
-        Map<String, Object> vars = new HashMap<>();
-
-        // TODO and some utilities?
-        vars.put("__vertx", vertx);
-        vars.put("__datasources", getDataSourceRepository());
-        vars.put("__schemas", getSchemaRepository());
-        vars.put("__queries", getQueryRepository());
-
-        return vars;
     }
 
     public static void main(String[] args) {

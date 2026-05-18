@@ -72,8 +72,6 @@ This project includes:
   Prometheus Java Span Context Supplier - OpenTelemetry under The Apache Software License, Version 2.0
   Prometheus Java Span Context Supplier - OpenTelemetry Agent under The Apache Software License, Version 2.0
   Protocol Buffers [Core] under BSD-3-Clause
-  rhino under Mozilla Public License, Version 2.0
-  rhino-engine under Mozilla Public License, Version 2.0
   SLF4J API Module under MIT License
   SLF4J JDK14 Provider under MIT License
   Testcontainers :: Database-Commons under MIT

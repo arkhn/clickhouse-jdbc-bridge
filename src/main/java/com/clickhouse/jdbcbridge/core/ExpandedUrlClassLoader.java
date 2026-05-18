@@ -81,43 +81,48 @@ public class ExpandedUrlClassLoader extends URLClassLoader {
                 continue;
             }
 
+            if (!PROTOCOL_FILE.equals(url.getProtocol())) {
+                throw new IllegalArgumentException(
+                        "Remote driver/extension URLs are not supported (got [" + url
+                                + "]); only local filesystem paths or file: URLs are allowed. "
+                                + "Drop the jar into the drivers/ directory instead.");
+            }
+
             boolean isValid = true;
-            if (PROTOCOL_FILE.equals(url.getProtocol())) {
-                Path path = null;
-                try {
-                    path = Paths.get(url.toURI());
-                } catch (URISyntaxException e) {
-                    isValid = false;
-                    log.warn("Skip invalid URL [{}]", url);
-                } catch (InvalidPathException e) {
-                    isValid = false;
-                    log.warn("Skip invalid path [{}]", url);
-                }
+            Path path = null;
+            try {
+                path = Paths.get(url.toURI());
+            } catch (URISyntaxException e) {
+                isValid = false;
+                log.warn("Skip invalid URL [{}]", url);
+            } catch (InvalidPathException e) {
+                isValid = false;
+                log.warn("Skip invalid path [{}]", url);
+            }
 
-                if (path != null && Files.isDirectory(path)) {
-                    File dir = path.normalize().toFile();
-                    String[] files = dir.list();
-                    Arrays.sort(files);
-                    for (String file : files) {
-                        if (file.endsWith(DRIVER_EXTENSION)) {
-                            file = new StringBuilder().append(FILE_URL_PREFIX).append(dir.getPath())
-                                    .append(File.separatorChar).append(file).toString();
+            if (path != null && Files.isDirectory(path)) {
+                File dir = path.normalize().toFile();
+                String[] files = dir.list();
+                Arrays.sort(files);
+                for (String file : files) {
+                    if (file.endsWith(DRIVER_EXTENSION)) {
+                        file = new StringBuilder().append(FILE_URL_PREFIX).append(dir.getPath())
+                                .append(File.separatorChar).append(file).toString();
 
-                            if (isNegative) {
-                                try {
-                                    negativeSet.add(new URL(file));
-                                } catch (Exception e) {
-                                    // ignore
-                                }
-                            } else if (cache.add(file)) {
-                                try {
-                                    list.add(new URL(file));
-                                } catch (MalformedURLException e) {
-                                    log.warn("Skip invalid file [{}]", file);
-                                }
-                            } else {
-                                log.warn("Discard duplicated file [{}]", file);
+                        if (isNegative) {
+                            try {
+                                negativeSet.add(new URL(file));
+                            } catch (Exception e) {
+                                // ignore
                             }
+                        } else if (cache.add(file)) {
+                            try {
+                                list.add(new URL(file));
+                            } catch (MalformedURLException e) {
+                                log.warn("Skip invalid file [{}]", file);
+                            }
+                        } else {
+                            log.warn("Discard duplicated file [{}]", file);
                         }
                     }
                 }

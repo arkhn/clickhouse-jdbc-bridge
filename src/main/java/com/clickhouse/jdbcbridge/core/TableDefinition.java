@@ -29,8 +29,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Stack;
 
-import javax.script.Bindings;
-
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 
@@ -57,7 +55,7 @@ public class TableDefinition {
             new ColumnDefinition("parameters", DataType.Str, true, DEFAULT_LENGTH, DEFAULT_PRECISION, DEFAULT_SCALE));
 
     public static final TableDefinition MUTATION_COLUMNS = new TableDefinition(
-            // datasource type: jdbc, config, script etc.
+            // datasource type: jdbc, config, etc.
             new ColumnDefinition("type", DataType.Str, true, DEFAULT_LENGTH, DEFAULT_PRECISION, DEFAULT_SCALE),
             // operation: read or write
             // new ColumnDefinition("operation", DataType.Str, true, DEFAULT_LENGTH,
@@ -198,18 +196,6 @@ public class TableDefinition {
                 dcs[index++] = ColumnDefinition.fromObject(o);
             }
             columns = new TableDefinition(dcs);
-        } else if (types instanceof Bindings) {
-            Bindings cols = (Bindings) types;
-            if (Utils.isArray(cols)) {
-                ColumnDefinition[] dcs = new ColumnDefinition[cols.size()];
-                int index = 0;
-                for (Object o : cols.values()) {
-                    dcs[index++] = ColumnDefinition.fromObject(o);
-                }
-                columns = new TableDefinition(dcs);
-            } else {
-                columns = new TableDefinition(ColumnDefinition.fromObject(types));
-            }
         } else if (types instanceof Map) {
             columns = new TableDefinition(ColumnDefinition.fromObject(types));
         } else { // treat as JSON string

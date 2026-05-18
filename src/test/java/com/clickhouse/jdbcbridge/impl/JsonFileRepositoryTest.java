@@ -18,8 +18,6 @@ package com.clickhouse.jdbcbridge.impl;
 
 import static org.testng.Assert.*;
 
-import java.util.HashMap;
-import java.util.Map;
 import java.util.function.Consumer;
 
 import com.clickhouse.jdbcbridge.core.Extension;
@@ -50,11 +48,6 @@ public class JsonFileRepositoryTest {
 
         @Override
         public void registerConfigLoader(String configPath, Consumer<JsonObject> consumer) {
-        }
-
-        @Override
-        public Map<String, Object> getScriptableObjects() {
-            return new HashMap<>();
         }
     }
 

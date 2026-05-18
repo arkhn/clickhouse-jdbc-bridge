@@ -93,10 +93,10 @@ public class JdbcBridgeVerticleTest {
         JdbcBridgeVerticle main = new JdbcBridgeVerticle();
         List<Extension<?>> extensions = main.loadExtensions(null);
         assertNotNull(extensions);
-        assertEquals(extensions.size(), 3);
+        assertEquals(extensions.size(), 2);
 
         extensions = main.loadExtensions(Utils.loadJsonFromFile("src/test/resources/server.json"));
         assertNotNull(extensions);
-        assertEquals(extensions.size(), 3);
+        assertEquals(extensions.size(), 2);
     }
 }

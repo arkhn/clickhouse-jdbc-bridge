@@ -41,7 +41,6 @@
         <shade.base>com.clickhouse.jdbcbridge.internal</shade.base>
         <deb-plugin.version>1.0.20</deb-plugin.version>
         <rpm-plugin.version>2.2.0</rpm-plugin.version>
-        <rhino.version>1.7.15</rhino.version>
         <skipTests>false</skipTests>
         <skipITs>${skipTests}</skipITs>
         <skipUTs>${skipTests}</skipUTs>
@@ -128,18 +127,6 @@
             <artifactId>vertx-micrometer-metrics</artifactId>
             <version>${vertx.version}</version>
         </dependency>
-        <!-- JavaScript engine for script datasource -->
-        <dependency>
-            <groupId>org.mozilla</groupId>
-            <artifactId>rhino</artifactId>
-            <version>${rhino.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>org.mozilla</groupId>
-            <artifactId>rhino-engine</artifactId>
-            <version>${rhino.version}</version>
-        </dependency>
-
         <!-- Monitoring -->
         <dependency>
             <groupId>io.micrometer</groupId>
