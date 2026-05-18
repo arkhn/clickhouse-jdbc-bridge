@@ -24,6 +24,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.function.Consumer;
 
+import com.clickhouse.jdbcbridge.core.AdhocPolicy;
 import com.clickhouse.jdbcbridge.core.ByteBuffer;
 import com.clickhouse.jdbcbridge.core.ColumnDefinition;
 import com.clickhouse.jdbcbridge.core.DataType;
@@ -97,6 +98,8 @@ public class JdbcBridgeVerticle extends AbstractVerticle implements ExtensionMan
     private final List<Extension<?>> extensions;
 
     private final RepositoryManager repos;
+
+    private AdhocPolicy adhocPolicy = AdhocPolicy.fromEnvironment();
 
     private long scanInterval = 5000L;
 
@@ -349,10 +352,28 @@ public class JdbcBridgeVerticle extends AbstractVerticle implements ExtensionMan
         return getDataSource(getDataSourceRepository(), uri, orCreate);
     }
 
-    private NamedDataSource getDataSource(Repository<NamedDataSource> repo, String uri, boolean orCreate) {
+    NamedDataSource getDataSource(Repository<NamedDataSource> repo, String uri, boolean orCreate) {
         NamedDataSource ds = repo.get(uri);
+        if (ds != null) {
+            return ds;
+        }
+        if (!orCreate) {
+            return null;
+        }
+        if (!adhocPolicy.allows(uri)) {
+            // Adhoc fall-through is disabled (or the URI doesn't match the
+            // configured allowlist). Refuse to construct a NamedDataSource from
+            // caller-supplied input; downstream handlers will surface this as a
+            // "datasource not found" error.
+            log.warn("Refused adhoc datasource [{}]: blocked by adhoc policy", uri);
+            return null;
+        }
+        return new NamedDataSource(uri, null, null);
+    }
 
-        return ds == null && orCreate ? new NamedDataSource(uri, null, null) : ds;
+    // Test seam: replace the boot-loaded policy with a fixture instance.
+    void setAdhocPolicy(AdhocPolicy policy) {
+        this.adhocPolicy = policy;
     }
 
     private void handleColumnsInfo(RoutingContext ctx) {

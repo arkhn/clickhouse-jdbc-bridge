@@ -142,8 +142,11 @@ select * from jdbc('ch-server', 'select 1');
 ```
 
 Adhoc JDBC URLs as the datasource (e.g. `jdbc:clickhouse://...`) are
-**discouraged for security reasons** — see [SECURITY.md](SECURITY.md) — and
-disabled in hardened deployments.
+**rejected by default** in this fork — see [SECURITY.md](SECURITY.md). To
+opt in, set `ALLOW_ADHOC_CONNECTIONS=true` (env) or
+`-Djdbc-bridge.adhoc.allow=true` (sysprop). Optionally restrict to a list
+of `jdbc:<vendor>:` prefixes via
+`ADHOC_ALLOWED_JDBC_PREFIXES=jdbc:clickhouse:,jdbc:postgresql:`.
 
 ### Schemas
 

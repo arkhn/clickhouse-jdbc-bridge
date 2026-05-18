@@ -21,10 +21,16 @@ import static org.testng.Assert.*;
 import java.time.Duration;
 import java.util.List;
 
+import java.util.Arrays;
+import java.util.Collections;
+
+import com.clickhouse.jdbcbridge.core.AdhocPolicy;
 import com.clickhouse.jdbcbridge.core.BaseRepository;
 import com.clickhouse.jdbcbridge.core.Extension;
 import com.clickhouse.jdbcbridge.core.ExtensionManager;
 import com.clickhouse.jdbcbridge.core.ManagedEntity;
+import com.clickhouse.jdbcbridge.core.NamedDataSource;
+import com.clickhouse.jdbcbridge.core.Repository;
 import com.clickhouse.jdbcbridge.core.Utils;
 
 import org.testcontainers.containers.BindMode;
@@ -98,5 +104,71 @@ public class JdbcBridgeVerticleTest {
         extensions = main.loadExtensions(Utils.loadJsonFromFile("src/test/resources/server.json"));
         assertNotNull(extensions);
         assertEquals(extensions.size(), 2);
+    }
+
+    @Test(groups = { "unit" })
+    public void testGetDataSource_adhocPolicyRejectsByDefault() {
+        // Default boot-loaded policy denies adhoc fall-through. A caller-supplied
+        // URI that isn't a registered named datasource must NOT trigger
+        // `new NamedDataSource(uri, ...)`.
+        JdbcBridgeVerticle main = new JdbcBridgeVerticle();
+        TestRepository<NamedDataSource> repo = new TestRepository<>(null, NamedDataSource.class);
+
+        NamedDataSource ds = main.getDataSource(
+                (Repository<NamedDataSource>) (Repository<?>) repo,
+                "jdbc:mysql://attacker.example.com:3306/db",
+                true);
+
+        assertNull(ds, "default policy must refuse adhoc construction");
+    }
+
+    @Test(groups = { "unit" })
+    public void testGetDataSource_adhocPolicyAllowsWhenEnabled() {
+        JdbcBridgeVerticle main = new JdbcBridgeVerticle();
+        main.setAdhocPolicy(new AdhocPolicy(true, Collections.emptyList()));
+        TestRepository<NamedDataSource> repo = new TestRepository<>(null, NamedDataSource.class);
+
+        NamedDataSource ds = main.getDataSource(
+                (Repository<NamedDataSource>) (Repository<?>) repo,
+                "jdbc:mysql://trusted.internal:3306/db",
+                true);
+
+        assertNotNull(ds, "kill switch on + empty allowlist must construct an adhoc datasource");
+    }
+
+    @Test(groups = { "unit" })
+    public void testGetDataSource_adhocPolicyFiltersByPrefix() {
+        JdbcBridgeVerticle main = new JdbcBridgeVerticle();
+        main.setAdhocPolicy(new AdhocPolicy(true, Arrays.asList("jdbc:clickhouse:")));
+        TestRepository<NamedDataSource> repo = new TestRepository<>(null, NamedDataSource.class);
+
+        assertNotNull(
+                main.getDataSource(
+                        (Repository<NamedDataSource>) (Repository<?>) repo,
+                        "jdbc:clickhouse://node1:8123/default",
+                        true),
+                "allowlisted prefix must be accepted");
+        assertNull(
+                main.getDataSource(
+                        (Repository<NamedDataSource>) (Repository<?>) repo,
+                        "jdbc:mysql://attacker/db",
+                        true),
+                "non-allowlisted prefix must be refused");
+    }
+
+    @Test(groups = { "unit" })
+    public void testGetDataSource_orCreateFalse_bypassesPolicy() {
+        // When orCreate is false (the common path for handlers that don't tolerate
+        // adhoc) the policy is irrelevant: we just return null for missing IDs.
+        JdbcBridgeVerticle main = new JdbcBridgeVerticle();
+        main.setAdhocPolicy(new AdhocPolicy(true, Collections.emptyList()));
+        TestRepository<NamedDataSource> repo = new TestRepository<>(null, NamedDataSource.class);
+
+        NamedDataSource ds = main.getDataSource(
+                (Repository<NamedDataSource>) (Repository<?>) repo,
+                "jdbc:mysql://whatever/db",
+                false);
+
+        assertNull(ds);
     }
 }

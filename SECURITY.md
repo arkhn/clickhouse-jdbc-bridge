@@ -99,6 +99,26 @@ development-only convenience.
 - In Kubernetes, mount datasource JSON from a `Secret`, not a `ConfigMap`.
 - Rotate credentials when an operator with config access leaves.
 
+### Adhoc JDBC URLs in inbound requests
+
+Inbound queries can name a datasource by either its registered name
+(`jdbc('mydb', ...)`) or, in upstream's original design, by an ad-hoc JDBC
+URL supplied directly in the query (`jdbc('jdbc:mysql://host/db', ...)`).
+The second form lets a caller with HTTP access to the bridge connect it to
+arbitrary hosts and credentials of their choosing — effectively a SSRF
+primitive against any database the bridge can reach.
+
+This fork rejects adhoc URLs by default. To opt in:
+
+| Setting | Type | Default | Effect |
+|---|---|---|---|
+| `ALLOW_ADHOC_CONNECTIONS` env / `jdbc-bridge.adhoc.allow` sysprop | boolean | `false` | Master kill switch. When `false`, the bridge refuses to construct a datasource from caller-supplied URIs. |
+| `ADHOC_ALLOWED_JDBC_PREFIXES` env / `jdbc-bridge.adhoc.allowed-prefixes` sysprop | comma-list | empty | When the kill switch is on, restrict adhoc URIs to those starting with one of these prefixes (e.g. `jdbc:clickhouse:,jdbc:postgresql:`). Empty means "any prefix". |
+
+The block is applied at request time in `JdbcBridgeVerticle.getDataSource`:
+unknown names fall through to a "datasource not found" response (no
+construction from inbound input).
+
 ### JDBC drivers
 
 - Pin driver versions. The published `arkhn/clickhouse-jdbc-bridge:full`
