@@ -1,3 +1,16 @@
+## [1.1.0-rc.3](https://github.com/arkhn/clickhouse-jdbc-bridge/compare/v1.1.0-rc.2...v1.1.0-rc.3) (2026-05-18)
+
+### Bug Fixes
+
+* **buffer:** throw on writeBigInteger overflow instead of silent corruption ([6f95fb8](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/6f95fb80fac49cba9d3fb4bf3f90f86ce2d5e83a))
+* **jdbc:** serialize HikariCP init to remove thread-safety FIXME ([120a6fa](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/120a6facfc20dae4222298f98fee82696b5e82ff))
+* **parser:** handle dotted schema names in extractSchemaName ([002210b](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/002210bb62e628cf890c3bdaf28f2624c40d264b))
+* **reader:** correct OFFSET off-by-one in DataTableReader.process ([ec983cd](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/ec983cd90bc875959b53e440a7830b548cee0367))
+
+### Features
+
+* **security:** reject adhoc JDBC URLs in inbound requests by default ([ea7f679](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/ea7f679ada125ec6a768ce4169e8b8a27e284fbf))
+
 ## [1.1.0-rc.2](https://github.com/arkhn/clickhouse-jdbc-bridge/compare/v1.1.0-rc.1...v1.1.0-rc.2) (2026-05-18)
 
 ### Bug Fixes
