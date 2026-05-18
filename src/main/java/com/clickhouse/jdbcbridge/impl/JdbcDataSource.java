@@ -140,8 +140,9 @@ public class JdbcDataSource extends NamedDataSource {
     public static final String EXTENSION_NAME = "jdbc";
 
     static {
-        // set default properties
-        DEFAULT_DATASOURCE_PROPERTIES.setProperty("connectionTestQuery", "SELECT 1");
+        // set default properties. connectionTestQuery is NOT set here on
+        // purpose — EngineDefaults supplies a per-driver value (Oracle needs
+        // "SELECT 1 FROM dual" and rejects the bare form with ORA-00923).
         DEFAULT_DATASOURCE_PROPERTIES.setProperty("minimumIdle", "1");
         DEFAULT_DATASOURCE_PROPERTIES.setProperty("maximumPoolSize", "5");
     }
