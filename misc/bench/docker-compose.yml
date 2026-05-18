@@ -1,0 +1,193 @@
+name: chjdbc-bench
+
+# Comprehensive performance benchmark stack for clickhouse-jdbc-bridge.
+#
+# Layout:
+#   clickhouse  - query driver (clickhouse-benchmark) + entry point for end-to-end workloads
+#   jdbc-bridge - system under test, built from this repo's Dockerfile (full image w/ mssql+oracle drivers)
+#   sqlserver   - PRIMARY upstream JDBC source (no native CH integration, so the bridge actually matters here)
+#   oracle      - SECONDARY upstream JDBC source
+#   prometheus  - scrapes bridge /metrics, CH /metrics, cAdvisor
+#   grafana     - pre-provisioned dashboards
+#   cadvisor    - cgroup-level container stats (RAM RSS, CPU, FDs)
+#
+# Apple Silicon note: only `sqlserver` is amd64-only and runs under emulation on arm64 hosts.
+# The bridge image is multi-arch (linux/amd64 + linux/arm64), and `oracle` (gvenzl/oracle-free)
+# ships an arm64 build, so both run natively on M-series. Numbers from any run involving the
+# emulated SQL Server service are directional, not publishable — mark results with emulated=true.
+#
+# Profiles:
+#   small  - default, everything constrained to fit on a 16 GB laptop
+#   soak   - same as small but with relaxed cpu/memory for 1h runs
+#   full   - large profile for x86 hardware
+
+x-platform-x86: &platform_x86
+  platform: linux/amd64
+
+services:
+  clickhouse:
+    image: clickhouse/clickhouse-server:25.8
+    container_name: bench-clickhouse
+    hostname: clickhouse
+    networks: [bench]
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+      - "9363:9363"
+    volumes:
+      - ./ch-config:/etc/clickhouse-server/config.d:ro
+    ulimits:
+      nofile: { soft: 262144, hard: 262144 }
+    deploy:
+      resources:
+        limits: { cpus: "4", memory: 6G }
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8123/ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  jdbc-bridge:
+    # Build is gated on `--profile build`; default reuses arkhn/clickhouse-jdbc-bridge:bench
+    # which is retagged from a prior :v1-full build to skip the 30 min cold compile.
+    image: arkhn/clickhouse-jdbc-bridge:bench
+    container_name: bench-jdbc-bridge
+    hostname: jdbc-bridge
+    networks: [bench]
+    ports:
+      - "9019:9019"
+    volumes:
+      - ./bridge-config:/app/config:ro
+      - ./bridge-config/scripts:/app/scripts:ro
+      - bridge-logs:/app/logs
+    environment:
+      JDBC_BRIDGE_JVM_OPTS: >-
+        -Xms512m -Xmx1g
+        -XX:+UseG1GC
+        -XX:+HeapDumpOnOutOfMemoryError
+        -XX:HeapDumpPath=/app/logs/oom.hprof
+        -Xlog:gc*:file=/app/logs/gc.log:tags,time,uptime,level
+      CUSTOM_DRIVER_LOADER: "false"
+    deploy:
+      resources:
+        limits: { cpus: "2", memory: 1.5G }
+    depends_on:
+      clickhouse: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:9019/ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 60
+
+  sqlserver:
+    <<: *platform_x86
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: bench-sqlserver
+    hostname: sqlserver
+    networks: [bench]
+    ports:
+      - "1433:1433"
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "Bench_passw0rd!"
+      MSSQL_PID: Developer
+    deploy:
+      resources:
+        limits: { cpus: "4", memory: 4G }
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -No -Q 'SELECT 1' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+
+  oracle:
+    # gvenzl/oracle-free ships an arm64 image, so no platform pin needed (runs native on M-series).
+    image: gvenzl/oracle-free:23-slim
+    container_name: bench-oracle
+    hostname: oracle
+    networks: [bench]
+    ports:
+      - "1521:1521"
+    environment:
+      ORACLE_PASSWORD: bench_password
+      APP_USER: bench
+      APP_USER_PASSWORD: bench_password
+    deploy:
+      resources:
+        limits: { cpus: "4", memory: 4G }
+    healthcheck:
+      test: ["CMD", "healthcheck.sh"]
+      interval: 15s
+      timeout: 10s
+      retries: 40
+      start_period: 120s
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    container_name: bench-prometheus
+    hostname: prometheus
+    networks: [bench]
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=7d"
+      - "--storage.tsdb.path=/prometheus"
+    deploy:
+      resources:
+        limits: { cpus: "1", memory: 512M }
+
+  grafana:
+    image: grafana/grafana:11.3.0
+    container_name: bench-grafana
+    hostname: grafana
+    networks: [bench]
+    ports:
+      # 3000 is commonly taken on dev machines; pick a free port.
+      - "3001:3000"
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    deploy:
+      resources:
+        limits: { cpus: "1", memory: 512M }
+    depends_on:
+      - prometheus
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    container_name: bench-cadvisor
+    hostname: cadvisor
+    networks: [bench]
+    ports:
+      - "8080:8080"
+    privileged: true
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    command:
+      - "--docker_only=true"
+      - "--housekeeping_interval=5s"
+    deploy:
+      resources:
+        limits: { cpus: "1", memory: 512M }
+
+networks:
+  bench:
+    driver: bridge
+
+volumes:
+  bridge-logs:
+  prometheus-data:
+  grafana-data:

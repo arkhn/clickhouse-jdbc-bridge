@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<clickhouse>
+    <listen_host>0.0.0.0</listen_host>
+
+    <!-- Point ClickHouse at the JDBC bridge container -->
+    <jdbc_bridge>
+        <host>jdbc-bridge</host>
+        <port>9019</port>
+    </jdbc_bridge>
+
+    <!-- Expose ClickHouse Prometheus metrics on a dedicated port (8123 is already the HTTP port) -->
+    <prometheus>
+        <endpoint>/metrics</endpoint>
+        <port>9363</port>
+        <metrics>true</metrics>
+        <events>true</events>
+        <asynchronous_metrics>true</asynchronous_metrics>
+    </prometheus>
+</clickhouse>

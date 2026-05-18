@@ -1,0 +1,28 @@
+# Pass/fail gates for `./run.sh --gate`.
+# Calibrated for the emulated dev stack — tighten when running on real hardware.
+#
+# Each entry is YAML-flat key:value. Values are upper bounds (lower is better) unless noted.
+
+# Error rate across the whole run, computed from ClickHouseProfileEvents_FailedQuery / Query.
+error_rate_max: 0.01           # 1%
+
+# Bridge JVM GC pause rate (seconds of stop-the-world per wall-second).
+gc_pause_rate_max: 0.05        # 5% of wall time spent in GC
+
+# Bridge JVM heap drift over a soak window (end - start) / start.
+# Short (<5min) soaks have a lot of noise from GC oscillation — only catches real leaks at 50%+.
+# For meaningful leak detection use --duration 1800 or more.
+heap_drift_pct_max: 50
+
+# Stability: FD / thread leak detection on a soak run.
+fd_drift_pct_max: 10
+thread_drift_pct_max: 10
+
+# Per-workload p99 latency ceilings (seconds). Set to a high value if you only care about errors.
+p99_w2_max: 0.20               # point lookup
+p99_w3_max: 2.0                # bulk read 1M rows
+p99_w4_max: 0.50               # wide types
+
+# Throughput floors (lower = bad). Set to 0 to disable.
+qps_w2_min: 100
+qps_w3_min: 1

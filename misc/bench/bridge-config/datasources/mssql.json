@@ -1,0 +1,14 @@
+{
+  "$schema": "../../../../docker/config/datasource.jschema",
+  "mssql": {
+    "driverClassName": "com.microsoft.sqlserver.jdbc.SQLServerDriver",
+    "jdbcUrl": "jdbc:sqlserver://sqlserver:1433;databaseName=bench;encrypt=false;trustServerCertificate=true;loginTimeout=30",
+    "username": "sa",
+    "password": "Bench_passw0rd!",
+    "maximumPoolSize": 20,
+    "minimumIdle": 4,
+    "connectionTimeout": 30000,
+    "idleTimeout": 600000,
+    "maxLifetime": 1800000
+  }
+}

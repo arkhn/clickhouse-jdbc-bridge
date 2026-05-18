@@ -59,6 +59,17 @@ public class ResponseWriter {
         this.response.drainHandler(handler);
     }
 
+    /**
+     * Check whether the underlying response's write queue has exceeded its high
+     * watermark and is signalling back-pressure. Producers should pause and wait
+     * for {@link #setDrainHanlder(Handler)} to fire before writing more data.
+     *
+     * @return {@code true} if the write queue is full
+     */
+    public boolean writeQueueFull() {
+        return this.response.writeQueueFull();
+    }
+
     public void write(ByteBuffer buffer) {
         if (this.response.closed() || this.response.ended()) {
             if (buffer != null && buffer.length() > 0) {
