@@ -1,6 +1,7 @@
 # ClickHouse JDBC Bridge
 
 [![Build](https://github.com/arkhn/clickhouse-jdbc-bridge/actions/workflows/build.yml/badge.svg)](https://github.com/arkhn/clickhouse-jdbc-bridge/actions/workflows/build.yml)
+[![codecov](https://codecov.io/gh/arkhn/clickhouse-jdbc-bridge/branch/master/graph/badge.svg)](https://codecov.io/gh/arkhn/clickhouse-jdbc-bridge)
 [![Release](https://img.shields.io/github/v/release/arkhn/clickhouse-jdbc-bridge?include_prereleases)](https://github.com/arkhn/clickhouse-jdbc-bridge/releases)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 

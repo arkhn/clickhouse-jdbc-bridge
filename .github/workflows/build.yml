@@ -33,6 +33,21 @@ jobs:
         env:
           TESTCONTAINERS_RYUK_DISABLED: true
         run: mvn --batch-mode --update-snapshots verify
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        if: always()
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./target/site/jacoco-aggregate/jacoco.xml
+          flags: jvm-tests
+          fail_ci_if_error: false
+      - name: Upload JaCoCo HTML report (artifact)
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: jacoco-coverage-report
+          path: target/site/jacoco-aggregate/
+          retention-days: 14
 
   docker:
     name: "Build and verify Dockerfiles..."
