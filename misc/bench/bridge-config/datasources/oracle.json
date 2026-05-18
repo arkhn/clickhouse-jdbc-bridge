@@ -1,0 +1,14 @@
+{
+  "$schema": "../../../../docker/config/datasource.jschema",
+  "oracle": {
+    "driverClassName": "oracle.jdbc.OracleDriver",
+    "jdbcUrl": "jdbc:oracle:thin:@//oracle:1521/FREEPDB1",
+    "username": "bench",
+    "password": "bench_password",
+    "maximumPoolSize": 20,
+    "minimumIdle": 4,
+    "connectionTimeout": 30000,
+    "idleTimeout": 600000,
+    "maxLifetime": 1800000
+  }
+}

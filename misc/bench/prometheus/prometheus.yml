@@ -1,0 +1,26 @@
+global:
+  scrape_interval: 5s
+  evaluation_interval: 15s
+  external_labels:
+    bench: chjdbc
+
+scrape_configs:
+  - job_name: jdbc-bridge
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["jdbc-bridge:9019"]
+        labels: { component: bridge }
+
+  - job_name: clickhouse
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["clickhouse:9363"]
+        labels: { component: clickhouse }
+
+  - job_name: cadvisor
+    static_configs:
+      - targets: ["cadvisor:8080"]
+
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]

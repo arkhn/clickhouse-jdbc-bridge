@@ -1,0 +1,16 @@
+{
+  "$comment": "Benchmark-specific server config. Larger timeouts, dedicated metrics path.",
+  "requestTimeout": 60000,
+  "queryTimeout": 600000,
+  "configScanPeriod": 5000,
+  "repositories": [
+    { "entity": "com.clickhouse.jdbcbridge.core.NamedDataSource", "repository": "com.clickhouse.jdbcbridge.impl.JsonFileRepository" },
+    { "entity": "com.clickhouse.jdbcbridge.core.NamedSchema",     "repository": "com.clickhouse.jdbcbridge.impl.JsonFileRepository" },
+    { "entity": "com.clickhouse.jdbcbridge.core.NamedQuery",      "repository": "com.clickhouse.jdbcbridge.impl.JsonFileRepository" }
+  ],
+  "extensions": [
+    { "class": "com.clickhouse.jdbcbridge.impl.JdbcDataSource" },
+    { "class": "com.clickhouse.jdbcbridge.impl.ConfigDataSource" },
+    { "class": "com.clickhouse.jdbcbridge.impl.ScriptDataSource" }
+  ]
+}

@@ -18,6 +18,8 @@ package com.clickhouse.jdbcbridge.core;
 
 import java.util.Objects;
 import java.util.TimeZone;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Interface for reading tabular data and writing to response.
@@ -80,11 +82,16 @@ public interface DataTableReader {
         // build column indices: 0 -> Request column index; 1 -> ResultSet column index
         int length = requestColumns.length;
         int[][] colIndices = new int[length][2];
+        // P1: hoist column.isNullable() out of the row loop so the hot path doesn't
+        // re-dispatch a (potentially megamorphic) getter per row x per column.
+        // Indexed by request column index (i) — matches the layout of colIndices.
+        boolean[] nullableMask = new boolean[length];
 
         for (int i = 0; i < length; i++) {
             boolean matched = false;
             ColumnDefinition col = requestColumns[i];
             String colName = col.getName();
+            nullableMask[i] = col.isNullable();
 
             // let's check if it's a virtual column which does not exist in result first
             if (params.showDatasourceColumn() && TableDefinition.COLUMN_DATASOURCE.equals(colName)) {
@@ -137,6 +144,13 @@ public interface DataTableReader {
             batchSize = 1;
         }
         int estimatedBufferSize = length * 4 * batchSize;
+        // P2: cap on the adaptive size-hint (16 MiB) so a single outsized batch
+        // (e.g. a row with a huge BLOB-shaped String) cannot wedge the hint at a
+        // pathological value for the rest of the request. The cap is generous —
+        // typical batches are small KiBs — so steady-state behaviour is "size hint
+        // = previous batch's actual byte count" and the next batch lands with zero
+        // capacity-doubling.
+        final int maxBufferSizeHint = 16 * 1024 * 1024;
 
         ByteBuffer buffer = ByteBuffer.newInstance(estimatedBufferSize, timezone);
         boolean skipped = rowCount > 0;
@@ -159,7 +173,9 @@ public interface DataTableReader {
 
                 ColumnDefinition column = requestColumns[colIndex];
 
-                if (column.isNullable()) {
+                // P1: read pre-computed nullability instead of dispatching
+                // column.isNullable() once per cell.
+                if (nullableMask[i]) {
                     // FIXME what if it's large object(e.g. blob, clob etc.)?
                     if (isNull(rowCount, index, column)) {
                         if (params.nullAsDefault()) {
@@ -178,14 +194,66 @@ public interface DataTableReader {
             }
 
             if (++rowCount % batchSize == 0) {
+                // P2: seed the next batch's buffer with the actual byte count of the
+                // batch we just flushed. This avoids ByteBuffer (Netty Buffer) capacity
+                // doubling for every batch after the first, since the high-water mark
+                // is a much better predictor than the static row-width estimate.
+                int actualBatchSize = buffer.length();
                 writer.write(buffer);
+                awaitDrain(dataSourceId, writer);
 
-                buffer = ByteBuffer.newInstance(estimatedBufferSize, timezone);
+                int nextHint = actualBatchSize > estimatedBufferSize ? actualBatchSize : estimatedBufferSize;
+                if (nextHint > maxBufferSizeHint) {
+                    nextHint = maxBufferSizeHint;
+                }
+                buffer = ByteBuffer.newInstance(nextHint, timezone);
             }
         }
 
         if (rowCount % batchSize != 0) {
             writer.write(buffer);
+            awaitDrain(dataSourceId, writer);
+        }
+    }
+
+    /**
+     * Apply HTTP write back-pressure: if the response's write queue is full,
+     * park the producer (this is invoked from a Vert.x worker thread, so
+     * blocking is safe) until the Netty pipeline drains. Without this the
+     * advisory {@code setWriteQueueMaxSize} is ignored on {@code write()} and
+     * un-acked {@code ByteBuf}s accumulate unbounded, causing OOM under
+     * concurrent bulk reads.
+     *
+     * @param dataSourceId datasource id, used for error context
+     * @param writer       response writer to back-pressure against
+     */
+    default void awaitDrain(String dataSourceId, ResponseWriter writer) {
+        if (!writer.writeQueueFull()) {
+            return;
+        }
+
+        // TODO: thread the configured queryTimeout from JdbcBridgeVerticle through
+        // QueryParameters/StreamOptions so this bound matches the request deadline.
+        final long drainTimeoutMs = 60_000L;
+        final CountDownLatch drained = new CountDownLatch(1);
+        writer.setDrainHanlder(v -> drained.countDown());
+        try {
+            // re-check after registering the handler: drain may have fired between
+            // writeQueueFull() and setDrainHanlder() above
+            if (!writer.writeQueueFull()) {
+                return;
+            }
+            if (!drained.await(drainTimeoutMs, TimeUnit.MILLISECONDS)) {
+                throw new DataAccessException(dataSourceId,
+                        "Response drain timed out after " + drainTimeoutMs + "ms (client slow or disconnected)",
+                        new java.io.IOException("response drain timeout"));
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new DataAccessException(dataSourceId, "Interrupted while waiting for response to drain", e);
+        } finally {
+            // detach so the latch isn't retained beyond this batch
+            writer.setDrainHanlder(null);
         }
     }
 

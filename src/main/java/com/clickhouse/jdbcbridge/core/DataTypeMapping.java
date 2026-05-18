@@ -17,15 +17,47 @@
 package com.clickhouse.jdbcbridge.core;
 
 import java.sql.JDBCType;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * This defines a mapping from specific JDBC/native type to {@link DataType}.
  * Native type is case-sensitive. {@code "*"} represents any type.
- * 
+ *
  * @since 2.0
  */
 public class DataTypeMapping {
     public static final String ANY_NATIVE_TYPE = "*";
+
+    // Vendor-specific JDBC type codes that fall outside java.sql.Types (so
+    // JDBCType.valueOf() throws on them). Each entry is the raw int the driver
+    // reports via ResultSetMetaData.getColumnType() mapped to its ClickHouse
+    // counterpart. Keep this list small: the preferred path is a real
+    // java.sql.Types value handled by DataTypeConverter.
+    private static final Map<Integer, DataType> VENDOR_TYPE_CODES;
+    static {
+        Map<Integer, DataType> codes = new HashMap<>();
+        // microsoft.sql.Types.DATETIMEOFFSET — SQL Server datetimeoffset (100-ns precision).
+        // Scale (typically 7) is taken from ResultSetMetaData.getScale() at the call site.
+        codes.put(-155, DataType.DateTime64);
+        // oracle.jdbc.OracleType.BINARY_FLOAT
+        codes.put(100, DataType.Float32);
+        // oracle.jdbc.OracleType.BINARY_DOUBLE
+        codes.put(101, DataType.Float64);
+        VENDOR_TYPE_CODES = Collections.unmodifiableMap(codes);
+    }
+
+    /**
+     * Look up a ClickHouse {@link DataType} for a vendor-specific JDBC type code
+     * that is not part of {@link java.sql.Types}.
+     *
+     * @param jdbcTypeCode raw int returned by {@code ResultSetMetaData.getColumnType()}
+     * @return mapped {@link DataType}, or {@code null} if the code is unknown
+     */
+    public static DataType fromVendorTypeCode(int jdbcTypeCode) {
+        return VENDOR_TYPE_CODES.get(jdbcTypeCode);
+    }
 
     private final JDBCType fromJdbcType;
     private final String fromNativeType;

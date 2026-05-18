@@ -1,0 +1,87 @@
+# PR-time micro-bench: runs the small profile of misc/bench against the PR head and posts a
+# regression-vs-main summary as a PR comment. Default-off — set `bench-pr` label on a PR to opt in.
+#
+# This intentionally uses tiny durations (W1+W2, 30s, c=10) so it adds only a couple minutes
+# to PR latency. For full perf work, run misc/bench locally with longer durations on real hw.
+
+name: bench-pr
+
+on:
+  pull_request:
+    types: [labeled, synchronize, opened, reopened]
+    paths:
+      - "src/main/java/com/clickhouse/jdbcbridge/core/**"
+      - "src/main/java/com/clickhouse/jdbcbridge/impl/**"
+      - "misc/bench/**"
+      - "pom.xml"
+
+jobs:
+  bench:
+    if: contains(github.event.pull_request.labels.*.name, 'bench-pr')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      pull-requests: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v4
+        with:
+          java-version: "25"
+          distribution: temurin
+          cache: maven
+
+      - name: Build bridge image (test target)
+        run: |
+          docker build --target full -t arkhn/clickhouse-jdbc-bridge:bench .
+
+      - name: Run bench (PR head)
+        working-directory: misc/bench
+        run: |
+          ./run.sh --workloads W1,W2 --duration 30 --concurrency 10 \
+                   --datasources mssql --rows 100000 --label pr-head
+
+      - name: Save head results
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-pr-head
+          path: misc/bench/results/pr-head/
+
+      - name: Checkout main
+        run: |
+          git fetch origin main
+          git checkout origin/main -- misc/bench
+          docker compose -f misc/bench/docker-compose.yml down -v || true
+
+      - name: Build bridge image (main target)
+        run: |
+          docker build --target full -t arkhn/clickhouse-jdbc-bridge:bench .
+
+      - name: Run bench (main baseline)
+        working-directory: misc/bench
+        run: |
+          ./run.sh --workloads W1,W2 --duration 30 --concurrency 10 \
+                   --datasources mssql --rows 100000 --skip-load --label pr-base
+
+      - name: Compare
+        working-directory: misc/bench
+        run: |
+          python3 lib/compare.py results/pr-base results/pr-head \
+            --regress-pct 20 | tee /tmp/bench-pr-comment.md || true
+
+      - name: Comment on PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const body = fs.readFileSync('/tmp/bench-pr-comment.md', 'utf8');
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '## bench-pr\n\n' + body + '\n\nemulated: GitHub-hosted runner (linux/amd64). Numbers are not publishable, only directional.'
+            });

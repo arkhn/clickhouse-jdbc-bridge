@@ -43,7 +43,9 @@ import com.clickhouse.jdbcbridge.core.ColumnDefinition;
 import com.clickhouse.jdbcbridge.core.DataAccessException;
 import com.clickhouse.jdbcbridge.core.DataTableReader;
 import com.clickhouse.jdbcbridge.core.DataType;
+import com.clickhouse.jdbcbridge.core.DataTypeMapping;
 import com.clickhouse.jdbcbridge.core.DefaultValues;
+import com.clickhouse.jdbcbridge.core.EngineDefaults;
 import com.clickhouse.jdbcbridge.core.Extension;
 import com.clickhouse.jdbcbridge.core.ExtensionManager;
 import com.clickhouse.jdbcbridge.core.NamedDataSource;
@@ -529,6 +531,7 @@ public class JdbcDataSource extends NamedDataSource {
 
                     // FIXME not thread-safe
                     HikariConfig conf = new HikariConfig(filterHikariProps(props, id));
+                    EngineDefaults.applyTo(conf);
                     conf.setMetricRegistry(Utils.getDefaultMetricRegistry());
                     log.debug("Creating HikariDataSource for id={}", id);
                     this.datasource = new HikariDataSource(conf);
@@ -544,6 +547,7 @@ public class JdbcDataSource extends NamedDataSource {
                 log.debug("Using standard driver loader for id={}", id);
                 try {
                     HikariConfig conf = new HikariConfig(filterHikariProps(props, id));
+                    EngineDefaults.applyTo(conf);
                     conf.setMetricRegistry(Utils.getDefaultMetricRegistry());
                     log.debug("Creating HikariDataSource for id={}", id);
                     this.datasource = new HikariDataSource(conf);
@@ -718,8 +722,22 @@ public class JdbcDataSource extends NamedDataSource {
 
             String name = getColumnName(meta, i);
             String typeName = meta.getColumnTypeName(i);
-            JDBCType jdbcType = JDBCType.valueOf(meta.getColumnType(i));
-            DataType type = converter.from(jdbcType, typeName, precision, scale, isSigned);
+            int rawJdbcType = meta.getColumnType(i);
+            DataType type;
+            try {
+                JDBCType jdbcType = JDBCType.valueOf(rawJdbcType);
+                type = converter.from(jdbcType, typeName, precision, scale, isSigned);
+            } catch (IllegalArgumentException e) {
+                // Not in java.sql.Types — try the vendor-extension table before giving up.
+                DataType vendorType = DataTypeMapping.fromVendorTypeCode(rawJdbcType);
+                if (vendorType == null) {
+                    log.warn("Unknown JDBC type code [{}] for column [{}] (native type [{}]); falling back to String",
+                            rawJdbcType, name, typeName);
+                    type = converter.from(JDBCType.OTHER, typeName, precision, scale, isSigned);
+                } else {
+                    type = vendorType;
+                }
+            }
 
             columns[i - 1] = new ColumnDefinition(name, type, ResultSetMetaData.columnNoNulls != nullability, length,
                     precision, scale);

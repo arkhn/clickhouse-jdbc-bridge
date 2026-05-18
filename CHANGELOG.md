@@ -1,3 +1,22 @@
+## [1.1.0-rc.1](https://github.com/arkhn/clickhouse-jdbc-bridge/compare/v1.0.4...v1.1.0-rc.1) (2026-05-18)
+
+### Bug Fixes
+
+* **jmh:** use full Apache 2.0 license header on ByteBufferBench ([328f513](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/328f513ad230b945eb231676b1224f0c245a4be8))
+* **streaming:** enforce write-queue backpressure in DataTableReader ([67ff93a](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/67ff93a0808493d724d1163e48d343f3e5591d83))
+* **types:** map SQL Server DATETIMEOFFSET + Oracle BINARY_FLOAT/DOUBLE ([cb73d94](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/cb73d94ce2e6b9e8fd612caa55b4fe202e69c392))
+
+### Features
+
+* **bench:** add end-to-end perf benchmark suite under misc/bench ([aa5dc74](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/aa5dc74f9233f87c24a3777484ca11bc22d8d21b))
+* **bench:** add HikariCP observability panels to Grafana dashboard ([132ef4b](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/132ef4bb2b15121688e9952942f56a6091f31703))
+* **jdbc:** per-driver engine defaults applied at datasource load ([14b4336](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/14b43369a2c44f4c0d978a0e3b5e7760970043d9))
+
+### Performance Improvements
+
+* **streaming:** hoist nullability + adaptive ByteBuffer size hint ([04d56c9](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/04d56c95b9995d67d03d1e5b657a9256b87df8c0)), closes [#1](https://github.com/arkhn/clickhouse-jdbc-bridge/issues/1)
+* **streaming:** raise default batch_size to 4096 and fetch_size to 16384 ([a2fa4ae](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/a2fa4ae8882868eaf2c3bc5fc37ad40477dc6505))
+
 ## [1.0.4](https://github.com/arkhn/clickhouse-jdbc-bridge/compare/v1.0.3...v1.0.4) (2026-05-13)
 
 ### Bug Fixes
