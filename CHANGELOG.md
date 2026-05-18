@@ -1,3 +1,9 @@
+## [1.1.0-rc.4](https://github.com/arkhn/clickhouse-jdbc-bridge/compare/v1.1.0-rc.3...v1.1.0-rc.4) (2026-05-18)
+
+### Bug Fixes
+
+* **it:** fork per IT class + use Oracle's default JDBC-handshake wait ([baafdb8](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/baafdb89b4cb6eba0ca2a94e52d4bddfa98e84d8))
+
 ## [1.1.0-rc.3](https://github.com/arkhn/clickhouse-jdbc-bridge/compare/v1.1.0-rc.2...v1.1.0-rc.3) (2026-05-18)
 
 ### Bug Fixes
