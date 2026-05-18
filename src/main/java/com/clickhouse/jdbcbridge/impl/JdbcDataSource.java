@@ -113,6 +113,15 @@ public class JdbcDataSource extends NamedDataSource {
     private static final String PROP_POOL_NAME = "poolName";
     private static final String PROP_PASSWORD = "password";
 
+    // Serialises datasource init across threads. Two pieces of JVM-global state
+    // mutate during init — DriverManager (via deregisterJdbcDriver) and the
+    // calling thread's context classloader (consulted by HikariCP for driver
+    // resolution). HikariConfig does not expose a setDriverClassLoader hook
+    // on the version we depend on, so we keep the swap-and-restore dance but
+    // serialise it. Cost is negligible: pool creation is a one-time startup
+    // event, not a per-query path.
+    private static final Object DRIVER_INIT_LOCK = new Object();
+
     private static final String PROP_CLIENT_NAME = "ClientUser";
     private static final String DEFAULT_CLIENT_NAME = "clickhouse-jdbc-bridge";
 
@@ -517,31 +526,37 @@ public class JdbcDataSource extends NamedDataSource {
                     log.debug("Found driver: {}", driverClassName);
                 }
 
-                // in case there's any driver in classpath was loaded, which might not be the
-                // exact version we need
-                deregisterJdbcDriver(driverClassName);
+                // HikariCP looks the driver class up via the calling thread's
+                // context classloader, so we must swap our per-datasource
+                // ExpandedUrlClassLoader in for the duration of the init. The
+                // global DRIVER_INIT_LOCK below serialises this swap together
+                // with deregisterJdbcDriver(); both touch JVM-global state
+                // (DriverManager and the thread's context loader) and must not
+                // interleave with another datasource being constructed
+                // concurrently.
+                synchronized (DRIVER_INIT_LOCK) {
+                    deregisterJdbcDriver(driverClassName);
 
-                Thread currentThread = Thread.currentThread();
-                ClassLoader currentContextClassLoader = currentThread.getContextClassLoader();
+                    Thread currentThread = Thread.currentThread();
+                    ClassLoader currentContextClassLoader = currentThread.getContextClassLoader();
 
-                try {
-                    log.debug("Setting up HikariCP for datasource id={}", id);
-                    ClassLoader loader = this.getDriverClassLoader();
-                    currentThread.setContextClassLoader(loader);
+                    try {
+                        log.debug("Setting up HikariCP for datasource id={}", id);
+                        currentThread.setContextClassLoader(this.getDriverClassLoader());
 
-                    // FIXME not thread-safe
-                    HikariConfig conf = new HikariConfig(filterHikariProps(props, id));
-                    EngineDefaults.applyTo(conf);
-                    conf.setMetricRegistry(Utils.getDefaultMetricRegistry());
-                    log.debug("Creating HikariDataSource for id={}", id);
-                    this.datasource = new HikariDataSource(conf);
-                    log.debug("HikariDataSource created successfully for id={}", id);
-                } catch (Exception e) {
-                    log.error("Failed to initialize HikariCP for datasource id={}. Properties: {}. Error: {}",
-                        id, props, e.getMessage(), e);
-                    throw e;
-                } finally {
-                    currentThread.setContextClassLoader(currentContextClassLoader);
+                        HikariConfig conf = new HikariConfig(filterHikariProps(props, id));
+                        EngineDefaults.applyTo(conf);
+                        conf.setMetricRegistry(Utils.getDefaultMetricRegistry());
+                        log.debug("Creating HikariDataSource for id={}", id);
+                        this.datasource = new HikariDataSource(conf);
+                        log.debug("HikariDataSource created successfully for id={}", id);
+                    } catch (Exception e) {
+                        log.error("Failed to initialize HikariCP for datasource id={}. Properties: {}. Error: {}",
+                            id, props, e.getMessage(), e);
+                        throw e;
+                    } finally {
+                        currentThread.setContextClassLoader(currentContextClassLoader);
+                    }
                 }
             } else {
                 log.debug("Using standard driver loader for id={}", id);

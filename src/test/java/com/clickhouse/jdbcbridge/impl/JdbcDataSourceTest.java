@@ -97,4 +97,32 @@ public class JdbcDataSourceTest {
         JdbcDataSource ds = new JdbcDataSource("unknown-prop-ds", repo, config);
         assertNotNull(ds);
     }
+
+    @Test(groups = { "unit" })
+    public void testConstructor_doesNotMutateThreadContextClassLoader() throws Exception {
+        // The constructor used to swap the calling thread's context classloader
+        // for HikariCP init; under concurrent datasource registration that
+        // swap-and-restore dance could leak the wrong loader into a sibling
+        // datasource's HikariConfig. The fix routes the driver classloader
+        // through HikariConfig.setDriverClassLoader instead. This test guards
+        // against a regression to the old behavior.
+        Thread t = Thread.currentThread();
+        ClassLoader sentinel = new java.net.URLClassLoader(new java.net.URL[0], t.getContextClassLoader());
+        ClassLoader original = t.getContextClassLoader();
+        t.setContextClassLoader(sentinel);
+        try {
+            JsonObject config = new JsonObject()
+                    .put("driverClassName", "com.mysql.cj.jdbc.Driver")
+                    .put("jdbcUrl", "jdbc:mysql://localhost:3306/test?useSSL=false");
+            Repository<NamedDataSource> repo = new JsonFileRepository<>(NamedDataSource.class);
+
+            JdbcDataSource ds = new JdbcDataSource("ctx-loader-ds", repo, config);
+            assertNotNull(ds);
+
+            org.testng.Assert.assertSame(t.getContextClassLoader(), sentinel,
+                    "JdbcDataSource constructor must not mutate the thread context classloader");
+        } finally {
+            t.setContextClassLoader(original);
+        }
+    }
 }
