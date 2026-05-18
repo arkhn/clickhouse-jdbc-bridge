@@ -41,11 +41,19 @@ import com.zaxxer.hikari.HikariConfig;
  */
 public final class EngineDefaults {
 
-    public static final String DRIVER_MSSQL    = "com.microsoft.sqlserver.jdbc.SQLServerDriver";
-    public static final String DRIVER_ORACLE   = "oracle.jdbc.OracleDriver";
-    public static final String DRIVER_MYSQL    = "com.mysql.cj.jdbc.Driver";
-    public static final String DRIVER_MARIADB  = "org.mariadb.jdbc.Driver";
-    public static final String DRIVER_POSTGRES = "org.postgresql.Driver";
+    public static final String DRIVER_MSSQL          = "com.microsoft.sqlserver.jdbc.SQLServerDriver";
+    public static final String DRIVER_ORACLE         = "oracle.jdbc.OracleDriver";
+    /**
+     * Legacy Oracle driver class. Both {@code oracle.jdbc.OracleDriver}
+     * (modern) and {@code oracle.jdbc.driver.OracleDriver} (legacy) ship in
+     * every ojdbc release and are used interchangeably by tooling — in
+     * particular, testcontainers' OracleContainer reports the legacy form
+     * from {@code getDriverClassName()}.
+     */
+    public static final String DRIVER_ORACLE_LEGACY  = "oracle.jdbc.driver.OracleDriver";
+    public static final String DRIVER_MYSQL          = "com.mysql.cj.jdbc.Driver";
+    public static final String DRIVER_MARIADB        = "org.mariadb.jdbc.Driver";
+    public static final String DRIVER_POSTGRES       = "org.postgresql.Driver";
 
     /**
      * Default {@code connectionTestQuery} per driver. HikariCP prefers
@@ -59,11 +67,12 @@ public final class EngineDefaults {
     private static final Map<String, String> CONNECTION_TEST_QUERIES;
     static {
         Map<String, String> m = new HashMap<>();
-        m.put(DRIVER_ORACLE,   "SELECT 1 FROM dual");
-        m.put(DRIVER_MSSQL,    "SELECT 1");
-        m.put(DRIVER_MYSQL,    "SELECT 1");
-        m.put(DRIVER_MARIADB,  "SELECT 1");
-        m.put(DRIVER_POSTGRES, "SELECT 1");
+        m.put(DRIVER_ORACLE,        "SELECT 1 FROM dual");
+        m.put(DRIVER_ORACLE_LEGACY, "SELECT 1 FROM dual");
+        m.put(DRIVER_MSSQL,         "SELECT 1");
+        m.put(DRIVER_MYSQL,         "SELECT 1");
+        m.put(DRIVER_MARIADB,       "SELECT 1");
+        m.put(DRIVER_POSTGRES,      "SELECT 1");
         CONNECTION_TEST_QUERIES = Collections.unmodifiableMap(m);
     }
 
@@ -111,12 +120,13 @@ public final class EngineDefaults {
         }
         DriverVersionProvider provider = versionProvider != null ? versionProvider : DEFAULT_VERSION_PROVIDER;
         switch (driverClassName) {
-            case DRIVER_MSSQL:    return mssqlDefaults(provider);
-            case DRIVER_ORACLE:   return ORACLE_DEFAULTS;
-            case DRIVER_MYSQL:    return MYSQL_DEFAULTS;
-            case DRIVER_MARIADB:  return MARIADB_DEFAULTS;
-            case DRIVER_POSTGRES: return POSTGRES_DEFAULTS;
-            default:              return Collections.emptyMap();
+            case DRIVER_MSSQL:          return mssqlDefaults(provider);
+            case DRIVER_ORACLE:         return ORACLE_DEFAULTS;
+            case DRIVER_ORACLE_LEGACY:  return ORACLE_DEFAULTS;
+            case DRIVER_MYSQL:          return MYSQL_DEFAULTS;
+            case DRIVER_MARIADB:        return MARIADB_DEFAULTS;
+            case DRIVER_POSTGRES:       return POSTGRES_DEFAULTS;
+            default:                    return Collections.emptyMap();
         }
     }
 

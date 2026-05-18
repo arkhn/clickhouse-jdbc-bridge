@@ -292,9 +292,25 @@ public class EngineDefaultsTest {
     @Test(groups = { "unit" })
     public void testConnectionTestQuery_oracleUsesFromDual() {
         // Oracle rejects bare `SELECT 1` with ORA-00923 ("FROM keyword not
-        // found"), so the dialect-correct form is non-negotiable.
+        // found"), so the dialect-correct form is non-negotiable. Both
+        // driver classes (modern and legacy) must use the same query —
+        // testcontainers' OracleContainer reports the legacy form.
         assertEquals(EngineDefaults.defaultConnectionTestQuery(EngineDefaults.DRIVER_ORACLE),
                 "SELECT 1 FROM dual");
+        assertEquals(EngineDefaults.defaultConnectionTestQuery(EngineDefaults.DRIVER_ORACLE_LEGACY),
+                "SELECT 1 FROM dual");
+    }
+
+    @Test(groups = { "unit" })
+    public void testForDriverOracleLegacyMapsToSameDefaults() {
+        // testcontainers' OracleContainer returns the legacy
+        // oracle.jdbc.driver.OracleDriver class name. Both must produce
+        // the same engine defaults so the legacy classname doesn't sneak
+        // past the engine-defaults gate.
+        Map<String, String> modern = EngineDefaults.forDriver(EngineDefaults.DRIVER_ORACLE);
+        Map<String, String> legacy = EngineDefaults.forDriver(EngineDefaults.DRIVER_ORACLE_LEGACY);
+        assertEquals(legacy, modern);
+        assertEquals(legacy.size(), 6);
     }
 
     @Test(groups = { "unit" })
