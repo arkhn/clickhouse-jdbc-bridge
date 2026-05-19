@@ -385,6 +385,17 @@ public abstract class AbstractBridgeIT {
         return r.body;
     }
 
+    /**
+     * Same as {@link #postColumnsInfo(String, String)} but without the
+     * status-200 assertion — kept private since {@link ResponseAndBody}
+     * itself is also private. Used by the in-class errorHandler test
+     * to inspect non-200 responses.
+     */
+    private ResponseAndBody rawPostColumnsInfo(String connectionString, String tableOrSql)
+            throws Exception {
+        return rawPostToPath("/columns_info", connectionString, tableOrSql);
+    }
+
     private String doPostQuery(String connectionString, String tableOrSql, boolean assert200)
             throws Exception {
         ResponseAndBody r = rawPostQueryWithStatus(connectionString, tableOrSql);
@@ -446,6 +457,29 @@ public abstract class AbstractBridgeIT {
         }
         assertNotNull(body);
         assertTrue(body.length() > 0, "expected non-empty response from [" + smokeQuery() + "]");
+    }
+
+    @Test(groups = { "sit" })
+    public void testBridgeColumnsInfoUnknownDatasourceHitsErrorHandler() throws Exception {
+        // Exercises the JdbcBridgeVerticle.errorHandler route — the
+        // verticle's failureHandler that catches ctx.fail() calls. The
+        // shortest path to errorHandler is to POST /columns_info with a
+        // bare-name datasource the bridge has never seen: BaseRepository
+        // .get() throws IllegalArgumentException in multi-type mode,
+        // handleColumnsInfo catches and calls ctx.fail(e), which routes
+        // through the failureHandler chain to errorHandler.
+        //
+        // Pin the observable contract: status is 500 (the failure
+        // doesn't carry an explicit status -> resolveErrorResponse
+        // falls back to DEFAULT_ERROR_STATUS=500) and the body carries
+        // a non-empty error message naming the missing entity.
+        ResponseAndBody r = rawPostColumnsInfo("does-not-exist", smokeQuery());
+
+        assertEquals(r.status, 500,
+                "unknown bare-name datasource must surface as 500; body=" + r.body);
+        assertNotNull(r.body);
+        assertTrue(r.body.contains("does not exist") || r.body.contains("not found"),
+                "errorHandler body must name the missing entity: " + r.body);
     }
 
     @Test(groups = { "sit" })
