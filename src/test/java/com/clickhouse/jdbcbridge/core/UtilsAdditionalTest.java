@@ -37,76 +37,37 @@ import org.testng.annotations.Test;
 public class UtilsAdditionalTest {
 
     @Test(groups = { "unit" })
-    public void checkArgument_byteArrayLength_acceptsAtOrUnderLimit() {
+    public void checkArgument_validInputs_acceptedAcrossAllOverloads() {
+        // byte[] length: at/under limit, including zero-length.
         Utils.checkArgument(new byte[3], 3);
         Utils.checkArgument(new byte[3], 4);
         Utils.checkArgument(new byte[0], 0);
-    }
-
-    @Test(groups = { "unit" },
-          expectedExceptions = IllegalArgumentException.class)
-    public void checkArgument_byteArrayLength_throwsOnExceed() {
-        Utils.checkArgument(new byte[5], 3);
-    }
-
-    @Test(groups = { "unit" })
-    public void checkArgument_intMin_passesAtOrAbove() {
+        // int min: at/above + negative min allows zero.
         Utils.checkArgument(5, 5);
         Utils.checkArgument(10, 5);
         Utils.checkArgument(0, -1);
-    }
-
-    @Test(groups = { "unit" },
-          expectedExceptions = IllegalArgumentException.class)
-    public void checkArgument_intMin_throwsBelow() {
-        Utils.checkArgument(2, 5);
-    }
-
-    @Test(groups = { "unit" })
-    public void checkArgument_longMin_passesAtOrAbove() {
+        // long min: at/above + extreme.
         Utils.checkArgument(5L, 5L);
         Utils.checkArgument(Long.MAX_VALUE, 0L);
-    }
-
-    @Test(groups = { "unit" },
-          expectedExceptions = IllegalArgumentException.class)
-    public void checkArgument_longMin_throwsBelow() {
-        Utils.checkArgument(-1L, 0L);
-    }
-
-    @Test(groups = { "unit" })
-    public void checkArgument_intRange_passesInside() {
+        // int / BigInteger range: inside (incl. inclusive bounds).
         Utils.checkArgument(5, 0, 10);
         Utils.checkArgument(0, 0, 10);
         Utils.checkArgument(10, 0, 10);
-    }
-
-    @Test(groups = { "unit" })
-    public void checkArgument_intRange_throwsOutside() {
-        assertThrows(IllegalArgumentException.class, () -> Utils.checkArgument(-1, 0, 10));
-        assertThrows(IllegalArgumentException.class, () -> Utils.checkArgument(11, 0, 10));
-    }
-
-    @Test(groups = { "unit" })
-    public void checkArgument_longRange_throwsOutside() {
-        assertThrows(IllegalArgumentException.class, () -> Utils.checkArgument(-1L, 0L, 10L));
-        assertThrows(IllegalArgumentException.class, () -> Utils.checkArgument(11L, 0L, 10L));
-    }
-
-    @Test(groups = { "unit" })
-    public void checkArgument_bigIntegerMin_passesAtOrAbove() {
         Utils.checkArgument(BigInteger.TEN, BigInteger.ZERO);
         Utils.checkArgument(BigInteger.ZERO, BigInteger.ZERO);
     }
 
-    @Test(groups = { "unit" },
-          expectedExceptions = IllegalArgumentException.class)
-    public void checkArgument_bigIntegerMin_throwsBelow() {
-        Utils.checkArgument(BigInteger.valueOf(-1), BigInteger.ZERO);
-    }
-
     @Test(groups = { "unit" })
-    public void checkArgument_bigIntegerRange_throwsOutside() {
+    public void checkArgument_invalidInputs_throwIAEAcrossAllOverloads() {
+        assertThrows(IllegalArgumentException.class, () -> Utils.checkArgument(new byte[5], 3));
+        assertThrows(IllegalArgumentException.class, () -> Utils.checkArgument(2, 5));
+        assertThrows(IllegalArgumentException.class, () -> Utils.checkArgument(-1L, 0L));
+        assertThrows(IllegalArgumentException.class, () -> Utils.checkArgument(-1, 0, 10));
+        assertThrows(IllegalArgumentException.class, () -> Utils.checkArgument(11, 0, 10));
+        assertThrows(IllegalArgumentException.class, () -> Utils.checkArgument(-1L, 0L, 10L));
+        assertThrows(IllegalArgumentException.class, () -> Utils.checkArgument(11L, 0L, 10L));
+        assertThrows(IllegalArgumentException.class,
+                () -> Utils.checkArgument(BigInteger.valueOf(-1), BigInteger.ZERO));
         assertThrows(IllegalArgumentException.class,
                 () -> Utils.checkArgument(BigInteger.valueOf(-1), BigInteger.ZERO, BigInteger.TEN));
         assertThrows(IllegalArgumentException.class,
