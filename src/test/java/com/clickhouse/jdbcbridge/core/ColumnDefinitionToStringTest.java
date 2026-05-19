@@ -21,6 +21,7 @@ import static org.testng.Assert.assertTrue;
 
 import java.util.LinkedHashMap;
 
+import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
 
 import io.vertx.core.json.JsonObject;
@@ -31,161 +32,104 @@ import io.vertx.core.json.JsonObject;
  */
 public class ColumnDefinitionToStringTest {
 
-    @Test(groups = { "unit" })
-    public void toString_Bool_rendersAsBoolean() {
-        // Bool serializes on the wire as "Boolean".
-        ColumnDefinition c = new ColumnDefinition("flag", DataType.Bool, false,
-                DataType.DEFAULT_LENGTH, DataType.DEFAULT_PRECISION, DataType.DEFAULT_SCALE);
-        assertEquals(c.toString(), "`flag` " + DataType.ALIAS_BOOLEAN);
+    @DataProvider(name = "ctorRendering")
+    Object[][] ctorRendering() {
+        // Cases using the long ctor (where fromString round-trips differently for some).
+        return new Object[][] {
+            { new ColumnDefinition("flag", DataType.Bool, false,
+                    DataType.DEFAULT_LENGTH, DataType.DEFAULT_PRECISION, DataType.DEFAULT_SCALE),
+                    "`flag` " + DataType.ALIAS_BOOLEAN },
+            { new ColumnDefinition("s", DataType.Str, false,
+                    DataType.DEFAULT_LENGTH, DataType.DEFAULT_PRECISION, DataType.DEFAULT_SCALE),
+                    "`s` " + DataType.ALIAS_STRING },
+            { new ColumnDefinition("k", DataType.FixedStr, false, 16,
+                    DataType.DEFAULT_PRECISION, DataType.DEFAULT_SCALE),
+                    "`k` " + DataType.ALIAS_FIXED_STRING + "(16)" },
+            { new ColumnDefinition("n", DataType.Int32, false,
+                    DataType.DEFAULT_LENGTH, DataType.DEFAULT_PRECISION, DataType.DEFAULT_SCALE),
+                    "`n` Int32" },
+            { new ColumnDefinition("amt", DataType.Decimal, false, 0, 18, 4),
+                    "`amt` Decimal(18,4)" },
+            { new ColumnDefinition("d32", DataType.Decimal32, false, 0, 9, 2),
+                    "`d32` Decimal32(2)" },
+            { new ColumnDefinition("d64", DataType.Decimal64, false, 0, 18, 4),
+                    "`d64` Decimal64(4)" },
+            { new ColumnDefinition("d128", DataType.Decimal128, false, 0, 38, 6),
+                    "`d128` Decimal128(6)" },
+            { new ColumnDefinition("d256", DataType.Decimal256, false, 0, 76, 8),
+                    "`d256` Decimal256(8)" },
+            { new ColumnDefinition("ts", DataType.DateTime, false,
+                    DataType.DEFAULT_LENGTH, DataType.DEFAULT_PRECISION, DataType.DEFAULT_SCALE),
+                    "`ts` DateTime" },
+            { new ColumnDefinition("x", DataType.Int32, true,
+                    DataType.DEFAULT_LENGTH, DataType.DEFAULT_PRECISION, DataType.DEFAULT_SCALE),
+                    "`x` Nullable(Int32)" },
+            { new ColumnDefinition("amt", DataType.Decimal, true, 0, 18, 4),
+                    "`amt` Nullable(Decimal(18,4))" },
+            // Backtick in column name is doubled (`` for `).
+            { new ColumnDefinition("with`tick", DataType.Str, false,
+                    DataType.DEFAULT_LENGTH, DataType.DEFAULT_PRECISION, DataType.DEFAULT_SCALE),
+                    "`with``tick` " + DataType.ALIAS_STRING },
+        };
+    }
+
+    @Test(groups = { "unit" }, dataProvider = "ctorRendering")
+    public void toString_ctorRendering(ColumnDefinition c, String expected) {
+        assertEquals(c.toString(), expected);
+    }
+
+    @DataProvider(name = "fromStringRendering")
+    Object[][] fromStringRendering() {
+        // Cases where fromString sets fields the JSON/long-ctor paths cannot.
+        return new Object[][] {
+            // DateTime64: fromString sets both precision + scale (JSON caps scale at 0).
+            { "ts64 DateTime64(3)",                       "`ts64` DateTime64(3)" },
+            { "ts DateTime64(6, 'Europe/Paris')",         "`ts` DateTime64(6,'Europe/Paris')" },
+            // null default isn't carried — treated as no default.
+            { "d Nullable(Int32) DEFAULT null",           "`d` Nullable(Int32)" },
+        };
+    }
+
+    @Test(groups = { "unit" }, dataProvider = "fromStringRendering")
+    public void toString_fromStringRendering(String input, String expected) {
+        assertEquals(ColumnDefinition.fromString(input).toString(), expected);
     }
 
     @Test(groups = { "unit" })
-    public void toString_Str_rendersAsString() {
-        ColumnDefinition c = new ColumnDefinition("s", DataType.Str, false,
-                DataType.DEFAULT_LENGTH, DataType.DEFAULT_PRECISION, DataType.DEFAULT_SCALE);
-        assertEquals(c.toString(), "`s` " + DataType.ALIAS_STRING);
-    }
-
-    @Test(groups = { "unit" })
-    public void toString_FixedStr_rendersWithLengthSuffix() {
-        ColumnDefinition c = new ColumnDefinition("k", DataType.FixedStr, false, 16,
-                DataType.DEFAULT_PRECISION, DataType.DEFAULT_SCALE);
-        assertEquals(c.toString(), "`k` " + DataType.ALIAS_FIXED_STRING + "(16)");
-    }
-
-    @Test(groups = { "unit" })
-    public void toString_Int32_usesDataTypeName_noSuffix() {
-        ColumnDefinition c = new ColumnDefinition("n", DataType.Int32, false,
-                DataType.DEFAULT_LENGTH, DataType.DEFAULT_PRECISION, DataType.DEFAULT_SCALE);
-        assertEquals(c.toString(), "`n` Int32");
-    }
-
-    @Test(groups = { "unit" })
-    public void toString_Decimal_rendersPrecisionAndScale() {
-        ColumnDefinition c = new ColumnDefinition("amt", DataType.Decimal, false,
-                0, 18, 4);
-        assertEquals(c.toString(), "`amt` Decimal(18,4)");
-    }
-
-    @Test(groups = { "unit" })
-    public void toString_Decimal32_rendersOnlyScale() {
-        // Decimal32 has implicit precision (=9); only scale is emitted.
-        ColumnDefinition c = new ColumnDefinition("d32", DataType.Decimal32, false, 0, 9, 2);
-        assertEquals(c.toString(), "`d32` Decimal32(2)");
-    }
-
-    @Test(groups = { "unit" })
-    public void toString_Decimal64_128_256_renderOnlyScale() {
-        ColumnDefinition d64 = new ColumnDefinition("d64", DataType.Decimal64, false, 0, 18, 4);
-        ColumnDefinition d128 = new ColumnDefinition("d128", DataType.Decimal128, false, 0, 38, 6);
-        ColumnDefinition d256 = new ColumnDefinition("d256", DataType.Decimal256, false, 0, 76, 8);
-
-        assertEquals(d64.toString(), "`d64` Decimal64(4)");
-        assertEquals(d128.toString(), "`d128` Decimal128(6)");
-        assertEquals(d256.toString(), "`d256` Decimal256(8)");
-    }
-
-    @Test(groups = { "unit" })
-    public void toString_DateTime_withoutTimezone_noSuffix() {
-        ColumnDefinition c = new ColumnDefinition("ts", DataType.DateTime, false,
-                DataType.DEFAULT_LENGTH, DataType.DEFAULT_PRECISION, DataType.DEFAULT_SCALE);
-        assertEquals(c.toString(), "`ts` DateTime");
-    }
-
-    @Test(groups = { "unit" })
-    public void toString_DateTime_withTimezone_appendsZoneId() {
+    public void toString_DateTime_withTimezone_fromJsonAppendsZoneId() {
         // nullable=false explicit so assertion isn't wrapped with Nullable(...).
         JsonObject src = new JsonObject()
                 .put("name", "ts").put("type", "DateTime")
                 .put("nullable", false).put("timezone", "UTC");
-        ColumnDefinition c = ColumnDefinition.fromJson(src);
-
-        assertEquals(c.toString(), "`ts` DateTime('UTC')");
+        assertEquals(ColumnDefinition.fromJson(src).toString(), "`ts` DateTime('UTC')");
     }
 
     @Test(groups = { "unit" })
-    public void toString_DateTime64_emitsScaleViaFromString() {
-        // fromJson doesn't carry separate precision for DateTime64; constructor caps scale at 0.
-        // fromString sets both precision + scale correctly.
-        ColumnDefinition c = ColumnDefinition.fromString("ts64 DateTime64(3)");
-
-        assertEquals(c.toString(), "`ts64` DateTime64(3)");
-    }
-
-    @Test(groups = { "unit" })
-    public void toString_DateTime64_withTimezone_appendsZoneAfterScale() {
-        ColumnDefinition c = ColumnDefinition.fromString("ts DateTime64(6, 'Europe/Paris')");
-
-        assertEquals(c.toString(), "`ts` DateTime64(6,'Europe/Paris')");
-    }
-
-    @Test(groups = { "unit" })
-    public void toString_nullableWrapsRenderedType() {
-        ColumnDefinition c = new ColumnDefinition("x", DataType.Int32, true,
-                DataType.DEFAULT_LENGTH, DataType.DEFAULT_PRECISION, DataType.DEFAULT_SCALE);
-        assertEquals(c.toString(), "`x` Nullable(Int32)");
-    }
-
-    @Test(groups = { "unit" })
-    public void toString_nullableAroundDecimal_preservesSuffix() {
-        ColumnDefinition c = new ColumnDefinition("amt", DataType.Decimal, true, 0, 18, 4);
-        assertEquals(c.toString(), "`amt` Nullable(Decimal(18,4))");
-    }
-
-    @Test(groups = { "unit" })
-    public void toString_backtickInNameIsDoubled() {
-        // Backtick in column name is doubled (`` for `).
-        ColumnDefinition c = new ColumnDefinition("with`tick", DataType.Str, false,
-                DataType.DEFAULT_LENGTH, DataType.DEFAULT_PRECISION, DataType.DEFAULT_SCALE);
-        assertEquals(c.toString(), "`with``tick` " + DataType.ALIAS_STRING);
-    }
-
-    @Test(groups = { "unit" })
-    public void toString_Enum8_rendersInsertionOrderedOptions() {
+    public void toString_Enum8_rendersInsertionOrderedOptionsAndEscapesQuotes() {
         // LinkedHashMap preserves insertion order on the wire — ClickHouse depends on this.
-        ColumnDefinition c = ColumnDefinition.fromString("status Enum8('A'=1, 'B'=2, 'C'=3)");
+        ColumnDefinition fromStr = ColumnDefinition.fromString("status Enum8('A'=1, 'B'=2, 'C'=3)");
+        assertTrue(fromStr.toString().startsWith("`status` Enum8"), fromStr.toString());
+        assertTrue(fromStr.toString().contains("'A'=1"));
+        assertTrue(fromStr.toString().contains("'B'=2"));
+        assertTrue(fromStr.toString().contains("'C'=3"));
 
-        assertTrue(c.toString().startsWith("`status` Enum8"),
-                "Enum8 rendering must lead with column name + type: " + c);
-        assertTrue(c.toString().contains("'A'=1"));
-        assertTrue(c.toString().contains("'B'=2"));
-        assertTrue(c.toString().contains("'C'=3"));
-    }
-
-    @Test(groups = { "unit" })
-    public void toString_Enum8_quotesInOptionNameAreEscaped() {
-        // Embedded quote must be backslash-escaped to avoid breaking the wire option list.
+        // Embedded quote in option name must be backslash-escaped.
         java.util.Map<String, Integer> opts = new LinkedHashMap<>();
         opts.put("with'quote", 1);
         opts.put("plain", 2);
         ColumnDefinition c = new ColumnDefinition("status", DataType.Enum8, false,
                 DataType.DEFAULT_LENGTH, DataType.DEFAULT_PRECISION, DataType.DEFAULT_SCALE,
                 null, null, opts);
-
-        assertTrue(c.toString().contains("'with\\'quote'=1"),
-                "embedded quote in option name must be escaped: " + c);
+        assertTrue(c.toString().contains("'with\\'quote'=1"), c.toString());
     }
 
     @Test(groups = { "unit" })
-    public void toString_stringDefault_quotedAndEscaped() {
-        ColumnDefinition c = ColumnDefinition.fromString("d String DEFAULT 'hello'");
-        if (ColumnDefinition.DEFAULT_VALUE_SUPPORT) {
-            assertEquals(c.toString(), "`d` String DEFAULT 'hello'");
-        }
-    }
-
-    @Test(groups = { "unit" })
-    public void toString_numericDefault_unquoted() {
-        ColumnDefinition c = ColumnDefinition.fromString("n Int32 DEFAULT 42");
-        if (ColumnDefinition.DEFAULT_VALUE_SUPPORT) {
-            assertEquals(c.toString(), "`n` Int32 DEFAULT 42");
-        }
-    }
-
-    @Test(groups = { "unit" })
-    public void toString_nullableDefault() {
-        // `null` default isn't carried — ColumnDefinition treats it as no default.
-        ColumnDefinition c = ColumnDefinition.fromString("d Nullable(Int32) DEFAULT null");
-        assertEquals(c.toString(), "`d` Nullable(Int32)");
+    public void toString_defaults_renderWhenSupportEnabled() {
+        // DEFAULT_VALUE_SUPPORT flag gates the DEFAULT clause emission.
+        if (!ColumnDefinition.DEFAULT_VALUE_SUPPORT) return;
+        assertEquals(ColumnDefinition.fromString("d String DEFAULT 'hello'").toString(),
+                "`d` String DEFAULT 'hello'");
+        assertEquals(ColumnDefinition.fromString("n Int32 DEFAULT 42").toString(),
+                "`n` Int32 DEFAULT 42");
     }
 }
