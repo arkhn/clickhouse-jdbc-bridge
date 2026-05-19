@@ -66,10 +66,25 @@ public class TableDefinitionTest {
     }
 
     @Test(groups = { "unit" })
-    public void testFromString() {
+    public void testFromString_parsesInlineNullableAndEnumColumns() {
+        // Comma-separated inline column schema (the form ClickHouse sends in
+        // the `columns` form-field). Used to only assert getColumn(1).toString()
+        // was non-null — that's vacuously true since toString builds a
+        // StringBuilder. Pin actual parsed column structure instead.
         String inlineSchema = "a Nullable(UInt8) default 3, b Enum8('N/A'=1, 'SB'=2)";
         TableDefinition def = TableDefinition.fromString(inlineSchema);
 
-        assertNotNull(def.getColumn(1).toString());
+        assertEquals(def.size(), 2);
+        assertEquals(def.getColumn(0).getName(), "a");
+        assertTrue(def.getColumn(0).isNullable(),
+                "`a Nullable(UInt8)` must yield a nullable column");
+        assertEquals(def.getColumn(0).getType(), DataType.UInt8);
+
+        assertEquals(def.getColumn(1).getName(), "b");
+        // Enum8 round-trips through toString and contains the literal enum values.
+        assertTrue(def.getColumn(1).toString().contains("Enum8"),
+                "rendered Enum8 column must mention its type: " + def.getColumn(1));
+        assertTrue(def.getColumn(1).toString().contains("SB"),
+                "rendered Enum8 column must include its labels: " + def.getColumn(1));
     }
 }

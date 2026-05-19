@@ -97,13 +97,38 @@ public class NamedDataSourceTest {
     }
 
     @Test(groups = { "unit" })
-    public void testGetColumns() {
+    public void testGetColumns_debugBranchReturnsDebugSchema() {
+        // params.isDebug() short-circuits before any datasource probing, so we
+        // can exercise getResultColumns without a live JDBC backend. The
+        // returned TableDefinition must be the singleton DEBUG_COLUMNS — that
+        // identity is the public contract callers depend on for routing.
         String dataSourceId = "test-datasource";
         JsonObject config = Utils.loadJsonFromFile("src/test/resources/datasources/test-datasource.json");
-
         NamedDataSource ds = new NamedDataSource(dataSourceId, new TestRepository<>(NamedDataSource.class),
                 config.getJsonObject(dataSourceId));
-        ds.getResultColumns("", "src/test/resources/simple.query", new QueryParameters());
-        assertEquals(ds.getId(), dataSourceId);
+
+        QueryParameters debugParams = new QueryParameters();
+        debugParams.merge(new JsonObject().put(QueryParameters.PARAM_DEBUG, true));
+
+        TableDefinition cols = ds.getResultColumns("", "ignored-for-debug", debugParams);
+
+        assertSame(cols, TableDefinition.DEBUG_COLUMNS,
+                "debug params must yield the singleton DEBUG_COLUMNS table definition");
+    }
+
+    @Test(groups = { "unit" })
+    public void testGetColumns_mutationBranchReturnsMutationSchema() {
+        String dataSourceId = "test-datasource";
+        JsonObject config = Utils.loadJsonFromFile("src/test/resources/datasources/test-datasource.json");
+        NamedDataSource ds = new NamedDataSource(dataSourceId, new TestRepository<>(NamedDataSource.class),
+                config.getJsonObject(dataSourceId));
+
+        QueryParameters mutationParams = new QueryParameters();
+        mutationParams.merge(new JsonObject().put(QueryParameters.PARAM_MUTATION, true));
+
+        TableDefinition cols = ds.getResultColumns("", "ignored-for-mutation", mutationParams);
+
+        assertSame(cols, TableDefinition.MUTATION_COLUMNS,
+                "mutation params must yield the singleton MUTATION_COLUMNS table definition");
     }
 }

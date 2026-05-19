@@ -36,6 +36,7 @@ This project includes:
   docker-java-transport-zerodep under The Apache Software License, Version 2.0
   Duct Tape under MIT
   error-prone annotations under Apache 2.0
+  H2 Database Engine under MPL 2.0 or EPL 1.0
   Hamcrest Core under New BSD License
   HdrHistogram under Public Domain, per Creative Commons CC0 or BSD-2-Clause
   HikariCP under The Apache Software License, Version 2.0

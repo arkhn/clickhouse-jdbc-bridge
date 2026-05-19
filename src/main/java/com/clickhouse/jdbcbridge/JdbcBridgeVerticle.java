@@ -92,8 +92,15 @@ public class JdbcBridgeVerticle extends AbstractVerticle implements ExtensionMan
     private static final String RESPONSE_CONTENT_TYPE = "application/octet-stream";
 
     private static final String WRITE_RESPONSE = "Ok.";
-    private static final String PING_RESPONSE = WRITE_RESPONSE + "\n";
-    private static final String SCHEMA_ALLOWED_RESPONSE = "1\n";
+    // Package-private exposure of the stateless response bodies so unit tests can
+    // assert the exact contract without spinning up an HttpServer. These constants
+    // are referenced once on the request path inside this class; tests use them
+    // read-only.
+    static final String PING_RESPONSE = WRITE_RESPONSE + "\n";
+    static final String SCHEMA_ALLOWED_RESPONSE = "1\n";
+    static final String IDENTIFIER_QUOTE_RESPONSE = NamedDataSource.DEFAULT_QUOTE_IDENTIFIER;
+    static final String DEFAULT_ERROR_BODY = "Internal server error";
+    static final int DEFAULT_ERROR_STATUS = 500;
 
     private final List<Extension<?>> extensions;
 
@@ -330,12 +337,46 @@ public class JdbcBridgeVerticle extends AbstractVerticle implements ExtensionMan
 
         if (failure != null) {
             log.error("Failed to respond (status {}): {}", statusCode, failure.getMessage(), failure);
-            String message = failure.getMessage();
-            ctx.response().setStatusCode(statusCode > 0 ? statusCode : 500)
-                .end(message != null ? message : "Internal server error");
         } else {
             log.error("Failed to respond (status {}) with no exception", statusCode);
-            ctx.response().setStatusCode(statusCode > 0 ? statusCode : 500).end("Internal server error");
+        }
+
+        ErrorResponse resolved = resolveErrorResponse(failure, statusCode);
+        ctx.response().setStatusCode(resolved.status).end(resolved.body);
+    }
+
+    /**
+     * Pure-logic core of {@link #errorHandler(RoutingContext)}: maps an
+     * optional failure plus the current status code to the response we should
+     * send. Extracted as a package-private seam so the contract can be unit
+     * tested without standing up an HTTP server.
+     *
+     * <p>Contract:
+     * <ul>
+     *   <li>status &lt;= 0 is replaced with {@value #DEFAULT_ERROR_STATUS}</li>
+     *   <li>a non-null failure with a non-null message uses that message as the
+     *       body; otherwise the body falls back to {@value #DEFAULT_ERROR_BODY}</li>
+     * </ul>
+     */
+    static ErrorResponse resolveErrorResponse(Throwable failure, int statusCode) {
+        int status = statusCode > 0 ? statusCode : DEFAULT_ERROR_STATUS;
+        String body;
+        if (failure != null && failure.getMessage() != null) {
+            body = failure.getMessage();
+        } else {
+            body = DEFAULT_ERROR_BODY;
+        }
+        return new ErrorResponse(status, body);
+    }
+
+    /** Small package-private value object so the seam stays allocation-cheap and trivially testable. */
+    static final class ErrorResponse {
+        final int status;
+        final String body;
+
+        ErrorResponse(int status, String body) {
+            this.status = status;
+            this.body = body;
         }
     }
 
@@ -353,7 +394,24 @@ public class JdbcBridgeVerticle extends AbstractVerticle implements ExtensionMan
     }
 
     NamedDataSource getDataSource(Repository<NamedDataSource> repo, String uri, boolean orCreate) {
-        NamedDataSource ds = repo.get(uri);
+        // BaseRepository.get throws IllegalArgumentException in multi-type mode when:
+        //   - bare-name miss: "NamedDataSource [<id>] does not exist!"
+        //   - typed-name with unknown prefix: "Unsupported type of NamedDataSource: <type>"
+        //     (createFromType -> getExtensionByType(autoCreate=false) throws)
+        // Both are semantically "datasource not found". Convert to null so the
+        // caller's null-check + 404 fallback fires consistently rather than
+        // bubbling out as a 500 via the verticle's outer catch / errorHandler.
+        // This makes /columns_info and /query return 404 (correct semantic)
+        // instead of 500 for unknown-datasource requests.
+        NamedDataSource ds;
+        try {
+            ds = repo.get(uri);
+        } catch (IllegalArgumentException notFound) {
+            if (log.isDebugEnabled()) {
+                log.debug("Datasource lookup miss [{}]: {}", uri, notFound.getMessage());
+            }
+            ds = null;
+        }
         if (ds != null) {
             return ds;
         }
@@ -381,31 +439,14 @@ public class JdbcBridgeVerticle extends AbstractVerticle implements ExtensionMan
             final QueryParser parser = QueryParser.fromRequest(ctx, getDataSourceRepository());
 
             // priority: named/inline schema -> named query -> type inferring
-            TableDefinition tableDef = null;
-
-            // check if we got named schema first
             String rawSchema = parser.getRawSchema();
+            String normalizedSchema = parser.getNormalizedSchema();
             NamedSchema namedSchema = getSchemaRepository().get(rawSchema);
-            if (namedSchema == null) { // try harder as we may got an inline schema
-                String schema = parser.getNormalizedSchema();
-                if (schema.indexOf(' ') != -1) {
-                    if (log.isDebugEnabled()) {
-                        log.debug("Got inline schema:\n[{}]", schema);
-                    }
-                    tableDef = TableDefinition.fromString(schema);
-                }
-            } else {
-                if (log.isDebugEnabled()) {
-                    log.debug("Got named schema:\n[{}]", namedSchema);
-                }
-                tableDef = namedSchema.getColumns();
-            }
 
             String rawQuery = parser.getRawQuery();
             log.info("Raw query:\n{}", rawQuery);
 
             String uri = parser.getConnectionString();
-
             QueryParameters params = parser.getQueryParameters();
             NamedDataSource ds = getDataSource(uri, params.isDebug());
             String dsId = uri;
@@ -414,32 +455,20 @@ public class JdbcBridgeVerticle extends AbstractVerticle implements ExtensionMan
                 params = ds.newQueryParameters(params);
             }
 
+            NamedQuery namedQuery = getQueryRepository().get(rawQuery);
+
+            TableDefinition tableDef = resolveColumnsTableDef(namedSchema, normalizedSchema, namedQuery, ds,
+                    getSchemaRepository(), rawSchema, parser.getNormalizedQuery(), params);
+
             if (tableDef == null) {
-                // even it's a named query, the column list could be empty
-                NamedQuery namedQuery = getQueryRepository().get(rawQuery);
-
-                if (namedQuery != null) {
-                    if (namedSchema == null) {
-                        namedSchema = getSchemaRepository().get(namedQuery.getSchema());
-                    }
-
-                    tableDef = namedSchema != null ? namedSchema.getColumns() : namedQuery.getColumns();
-                } else {
-                    if (namedSchema != null) {
-                        tableDef = namedSchema.getColumns();
-                    } else if (ds != null) {
-                        tableDef = ds.getResultColumns(rawSchema, parser.getNormalizedQuery(), params);
-                    } else {
-                        List<String> availableDs = getDataSourceRepository().getUsageStats().stream()
-                            .map(UsageStats::getName)
-                            .collect(java.util.stream.Collectors.toList());
-                        String errorMsg = String.format("Datasource not found: %s. Available datasources: %s",
-                            uri, availableDs);
-                        log.error(errorMsg);
-                        ctx.fail(404, new IllegalStateException(errorMsg));
-                        return;
-                    }
-                }
+                List<String> availableDs = getDataSourceRepository().getUsageStats().stream()
+                    .map(UsageStats::getName)
+                    .collect(java.util.stream.Collectors.toList());
+                String errorMsg = String.format("Datasource not found: %s. Available datasources: %s",
+                    uri, availableDs);
+                log.error(errorMsg);
+                ctx.fail(404, new IllegalStateException(errorMsg));
+                return;
             }
 
             List<ColumnDefinition> additionalColumns = new ArrayList<ColumnDefinition>();
@@ -468,9 +497,62 @@ public class JdbcBridgeVerticle extends AbstractVerticle implements ExtensionMan
         }
     }
 
+    /**
+     * Pure-logic core of {@link #handleColumnsInfo(RoutingContext)}: resolves
+     * which {@link TableDefinition} should describe the response columns,
+     * given the already-performed repository lookups and the parser's outputs.
+     * Extracted as a package-private seam so the lookup-priority matrix is
+     * exhaustively unit-testable without a live Vert.x server / JDBC backend.
+     *
+     * <p>Priority (matches the historical handler behaviour):
+     * <ol>
+     *   <li>A non-null {@code namedSchema} wins outright: its columns are
+     *       returned.</li>
+     *   <li>Otherwise, if {@code normalizedSchema} contains a space, it is
+     *       treated as an inline schema spec and parsed via
+     *       {@link TableDefinition#fromString(String)}.</li>
+     *   <li>Otherwise, if {@code namedQuery} resolved, the query's columns
+     *       are returned — except when the query references a {@code schema}
+     *       entry in the repository, in which case that schema's columns
+     *       win.</li>
+     *   <li>Otherwise, if a datasource is available, its
+     *       {@link NamedDataSource#getResultColumns(String, String, QueryParameters)}
+     *       is consulted (debug / mutation / inferred types).</li>
+     *   <li>If every lookup misses and no datasource is available, returns
+     *       {@code null} to signal the caller should emit a 404.</li>
+     * </ol>
+     */
+    static TableDefinition resolveColumnsTableDef(NamedSchema namedSchema, String normalizedSchema,
+            NamedQuery namedQuery, NamedDataSource ds, Repository<NamedSchema> schemaRepo,
+            String rawSchema, String normalizedQuery, QueryParameters params) {
+        // Step 1: named schema wins outright.
+        if (namedSchema != null) {
+            return namedSchema.getColumns();
+        }
+
+        // Step 2: inline schema (whitespace-bearing normalized schema string).
+        if (normalizedSchema != null && normalizedSchema.indexOf(' ') != -1) {
+            return TableDefinition.fromString(normalizedSchema);
+        }
+
+        // Step 3: named query, optionally upgrading to a schema it references.
+        if (namedQuery != null) {
+            NamedSchema referenced = schemaRepo == null ? null : schemaRepo.get(namedQuery.getSchema());
+            return referenced != null ? referenced.getColumns() : namedQuery.getColumns();
+        }
+
+        // Step 4: fall back to the datasource's column inference.
+        if (ds != null) {
+            return ds.getResultColumns(rawSchema, normalizedQuery, params);
+        }
+
+        // Step 5: nothing left — signal 404 to caller.
+        return null;
+    }
+
     private void handleIdentifierQuote(RoutingContext ctx) {
         // don't want to repeat datasource lookup here
-        ctx.response().end(ByteBuffer.asBuffer(NamedDataSource.DEFAULT_QUOTE_IDENTIFIER));
+        ctx.response().end(ByteBuffer.asBuffer(IDENTIFIER_QUOTE_RESPONSE));
     }
 
     private void handleQuery(RoutingContext ctx) {

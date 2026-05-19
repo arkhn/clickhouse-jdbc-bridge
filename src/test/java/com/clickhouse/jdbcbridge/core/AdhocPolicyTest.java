@@ -89,10 +89,16 @@ public class AdhocPolicyTest {
     }
 
     @Test(groups = { "unit" })
-    public void testGetters() {
+    public void allowedPrefixesAreExposedAsUnmodifiableList() {
         AdhocPolicy policy = new AdhocPolicy(true,
                 Arrays.asList("jdbc:postgresql:", "jdbc:clickhouse:"));
+
         assertTrue(policy.isAllowed());
-        assertEquals(policy.getAllowedPrefixes().size(), 2);
+        // Pin the contract that matters: the list is defensively copied and
+        // returned unmodifiable, so callers can't mutate the policy at runtime.
+        assertEquals(policy.getAllowedPrefixes(),
+                Arrays.asList("jdbc:postgresql:", "jdbc:clickhouse:"));
+        org.testng.Assert.assertThrows(UnsupportedOperationException.class,
+                () -> policy.getAllowedPrefixes().add("jdbc:mysql:"));
     }
 }
