@@ -422,31 +422,14 @@ public class JdbcBridgeVerticle extends AbstractVerticle implements ExtensionMan
             final QueryParser parser = QueryParser.fromRequest(ctx, getDataSourceRepository());
 
             // priority: named/inline schema -> named query -> type inferring
-            TableDefinition tableDef = null;
-
-            // check if we got named schema first
             String rawSchema = parser.getRawSchema();
+            String normalizedSchema = parser.getNormalizedSchema();
             NamedSchema namedSchema = getSchemaRepository().get(rawSchema);
-            if (namedSchema == null) { // try harder as we may got an inline schema
-                String schema = parser.getNormalizedSchema();
-                if (schema.indexOf(' ') != -1) {
-                    if (log.isDebugEnabled()) {
-                        log.debug("Got inline schema:\n[{}]", schema);
-                    }
-                    tableDef = TableDefinition.fromString(schema);
-                }
-            } else {
-                if (log.isDebugEnabled()) {
-                    log.debug("Got named schema:\n[{}]", namedSchema);
-                }
-                tableDef = namedSchema.getColumns();
-            }
 
             String rawQuery = parser.getRawQuery();
             log.info("Raw query:\n{}", rawQuery);
 
             String uri = parser.getConnectionString();
-
             QueryParameters params = parser.getQueryParameters();
             NamedDataSource ds = getDataSource(uri, params.isDebug());
             String dsId = uri;
@@ -455,32 +438,20 @@ public class JdbcBridgeVerticle extends AbstractVerticle implements ExtensionMan
                 params = ds.newQueryParameters(params);
             }
 
+            NamedQuery namedQuery = getQueryRepository().get(rawQuery);
+
+            TableDefinition tableDef = resolveColumnsTableDef(namedSchema, normalizedSchema, namedQuery, ds,
+                    getSchemaRepository(), rawSchema, parser.getNormalizedQuery(), params);
+
             if (tableDef == null) {
-                // even it's a named query, the column list could be empty
-                NamedQuery namedQuery = getQueryRepository().get(rawQuery);
-
-                if (namedQuery != null) {
-                    if (namedSchema == null) {
-                        namedSchema = getSchemaRepository().get(namedQuery.getSchema());
-                    }
-
-                    tableDef = namedSchema != null ? namedSchema.getColumns() : namedQuery.getColumns();
-                } else {
-                    if (namedSchema != null) {
-                        tableDef = namedSchema.getColumns();
-                    } else if (ds != null) {
-                        tableDef = ds.getResultColumns(rawSchema, parser.getNormalizedQuery(), params);
-                    } else {
-                        List<String> availableDs = getDataSourceRepository().getUsageStats().stream()
-                            .map(UsageStats::getName)
-                            .collect(java.util.stream.Collectors.toList());
-                        String errorMsg = String.format("Datasource not found: %s. Available datasources: %s",
-                            uri, availableDs);
-                        log.error(errorMsg);
-                        ctx.fail(404, new IllegalStateException(errorMsg));
-                        return;
-                    }
-                }
+                List<String> availableDs = getDataSourceRepository().getUsageStats().stream()
+                    .map(UsageStats::getName)
+                    .collect(java.util.stream.Collectors.toList());
+                String errorMsg = String.format("Datasource not found: %s. Available datasources: %s",
+                    uri, availableDs);
+                log.error(errorMsg);
+                ctx.fail(404, new IllegalStateException(errorMsg));
+                return;
             }
 
             List<ColumnDefinition> additionalColumns = new ArrayList<ColumnDefinition>();
@@ -507,6 +478,59 @@ public class JdbcBridgeVerticle extends AbstractVerticle implements ExtensionMan
             log.error("Exception in handleColumnsInfo", e);
             ctx.fail(e);
         }
+    }
+
+    /**
+     * Pure-logic core of {@link #handleColumnsInfo(RoutingContext)}: resolves
+     * which {@link TableDefinition} should describe the response columns,
+     * given the already-performed repository lookups and the parser's outputs.
+     * Extracted as a package-private seam so the lookup-priority matrix is
+     * exhaustively unit-testable without a live Vert.x server / JDBC backend.
+     *
+     * <p>Priority (matches the historical handler behaviour):
+     * <ol>
+     *   <li>A non-null {@code namedSchema} wins outright: its columns are
+     *       returned.</li>
+     *   <li>Otherwise, if {@code normalizedSchema} contains a space, it is
+     *       treated as an inline schema spec and parsed via
+     *       {@link TableDefinition#fromString(String)}.</li>
+     *   <li>Otherwise, if {@code namedQuery} resolved, the query's columns
+     *       are returned — except when the query references a {@code schema}
+     *       entry in the repository, in which case that schema's columns
+     *       win.</li>
+     *   <li>Otherwise, if a datasource is available, its
+     *       {@link NamedDataSource#getResultColumns(String, String, QueryParameters)}
+     *       is consulted (debug / mutation / inferred types).</li>
+     *   <li>If every lookup misses and no datasource is available, returns
+     *       {@code null} to signal the caller should emit a 404.</li>
+     * </ol>
+     */
+    static TableDefinition resolveColumnsTableDef(NamedSchema namedSchema, String normalizedSchema,
+            NamedQuery namedQuery, NamedDataSource ds, Repository<NamedSchema> schemaRepo,
+            String rawSchema, String normalizedQuery, QueryParameters params) {
+        // Step 1: named schema wins outright.
+        if (namedSchema != null) {
+            return namedSchema.getColumns();
+        }
+
+        // Step 2: inline schema (whitespace-bearing normalized schema string).
+        if (normalizedSchema != null && normalizedSchema.indexOf(' ') != -1) {
+            return TableDefinition.fromString(normalizedSchema);
+        }
+
+        // Step 3: named query, optionally upgrading to a schema it references.
+        if (namedQuery != null) {
+            NamedSchema referenced = schemaRepo == null ? null : schemaRepo.get(namedQuery.getSchema());
+            return referenced != null ? referenced.getColumns() : namedQuery.getColumns();
+        }
+
+        // Step 4: fall back to the datasource's column inference.
+        if (ds != null) {
+            return ds.getResultColumns(rawSchema, normalizedQuery, params);
+        }
+
+        // Step 5: nothing left — signal 404 to caller.
+        return null;
     }
 
     private void handleIdentifierQuote(RoutingContext ctx) {
