@@ -133,4 +133,104 @@ public class JdbcBridgeVerticleHandlersTest {
         assertEquals(r.status, 500);
         assertEquals(r.body, "Internal server error");
     }
+
+    // ---------- getDataSource: IAE -> null conversion ----------
+
+    /**
+     * Tiny test double — implements just enough Repository surface for
+     * getDataSource. Different instances throw, return null, or return
+     * a real datasource depending on the test.
+     */
+    private static final class FakeRepo
+            implements com.clickhouse.jdbcbridge.core.Repository<com.clickhouse.jdbcbridge.core.NamedDataSource> {
+        private final RuntimeException throwOnGet;
+        private final com.clickhouse.jdbcbridge.core.NamedDataSource ds;
+
+        FakeRepo(RuntimeException throwOnGet, com.clickhouse.jdbcbridge.core.NamedDataSource ds) {
+            this.throwOnGet = throwOnGet;
+            this.ds = ds;
+        }
+
+        @Override public Class<com.clickhouse.jdbcbridge.core.NamedDataSource> getEntityClass() {
+            return com.clickhouse.jdbcbridge.core.NamedDataSource.class;
+        }
+        @Override public boolean accept(Class<?> c) {
+            return com.clickhouse.jdbcbridge.core.NamedDataSource.class.equals(c);
+        }
+        @Override public String resolve(String name) { return name; }
+        @Override public java.util.List<com.clickhouse.jdbcbridge.core.UsageStats> getUsageStats() {
+            return java.util.Collections.emptyList();
+        }
+        @Override public void registerType(String type,
+                com.clickhouse.jdbcbridge.core.Extension<com.clickhouse.jdbcbridge.core.NamedDataSource> ext) { }
+        @Override public void put(String id, com.clickhouse.jdbcbridge.core.NamedDataSource entity) { }
+        @Override public com.clickhouse.jdbcbridge.core.NamedDataSource get(String id) {
+            if (throwOnGet != null) throw throwOnGet;
+            return ds;
+        }
+    }
+
+    @org.testng.annotations.Test(groups = { "unit" })
+    public void getDataSource_iaeFromRepo_isConvertedToNull() {
+        // BaseRepository.get throws IllegalArgumentException for both
+        //  - bare-name miss: "[xxx] does not exist!"
+        //  - unknown type prefix: "Unsupported type of NamedDataSource: xxx"
+        // The verticle's getDataSource must collapse both to null so the
+        // handler's 404 fallback fires rather than 500ing.
+        JdbcBridgeVerticle v = new JdbcBridgeVerticle();
+        // Disable adhoc so the null result isn't re-promoted into a fresh
+        // adhoc NamedDataSource. Single-arg adhocPolicy constructor isn't
+        // visible; use the AdhocPolicy(false, []) ctor directly.
+        v.setAdhocPolicy(new com.clickhouse.jdbcbridge.core.AdhocPolicy(
+                false, java.util.Collections.emptyList()));
+
+        FakeRepo throwingRepo = new FakeRepo(
+                new IllegalArgumentException("NamedDataSource [unknown] does not exist!"),
+                null);
+
+        // orCreate=false: returns null after IAE caught.
+        assertEquals(v.getDataSource(throwingRepo, "unknown", false), null,
+                "IAE from repo.get must convert to null");
+
+        // orCreate=true with adhocPolicy disabled: still returns null
+        // (the adhoc-promotion branch is gated).
+        assertEquals(v.getDataSource(throwingRepo, "unknown", true), null,
+                "IAE + orCreate=true + adhocPolicy.disabled must still yield null");
+    }
+
+    @org.testng.annotations.Test(groups = { "unit" })
+    public void getDataSource_nonIaeFromRepo_isPropagated() {
+        // Only IAE is normalized to null. A different RuntimeException
+        // (genuine internal failure) must propagate so the handler
+        // surfaces it as a 500 rather than a misleading 404.
+        JdbcBridgeVerticle v = new JdbcBridgeVerticle();
+        v.setAdhocPolicy(new com.clickhouse.jdbcbridge.core.AdhocPolicy(
+                false, java.util.Collections.emptyList()));
+
+        FakeRepo brokenRepo = new FakeRepo(new RuntimeException("disk full"), null);
+
+        try {
+            v.getDataSource(brokenRepo, "anything", false);
+            org.testng.Assert.fail("non-IAE must propagate");
+        } catch (RuntimeException expected) {
+            // The IAE catch is narrow on purpose — any other RuntimeException
+            // signals an actual internal failure and must NOT be swallowed.
+            org.testng.Assert.assertFalse(expected instanceof IllegalArgumentException);
+            org.testng.Assert.assertEquals(expected.getMessage(), "disk full");
+        }
+    }
+
+    @org.testng.annotations.Test(groups = { "unit" })
+    public void getDataSource_repoReturnsNonNull_passesThrough() {
+        // Sanity-pin: when repo.get() succeeds with a real datasource,
+        // getDataSource returns that datasource (no IAE caught, no
+        // adhoc fallback). This is the happy path that runs on every
+        // request — pin it.
+        JdbcBridgeVerticle v = new JdbcBridgeVerticle();
+        com.clickhouse.jdbcbridge.core.NamedDataSource real =
+                new com.clickhouse.jdbcbridge.core.NamedDataSource("real", null, null);
+        FakeRepo happyRepo = new FakeRepo(null, real);
+
+        assertEquals(v.getDataSource(happyRepo, "real", false), real);
+    }
 }

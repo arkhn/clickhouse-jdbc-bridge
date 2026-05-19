@@ -565,14 +565,15 @@ public abstract class AbstractBridgeIT {
     }
 
     @Test(groups = { "sit" })
-    public void testBridgeColumnsInfoUnknownDatasourceHitsErrorHandler() throws Exception {
-        // Exercises the JdbcBridgeVerticle.errorHandler route — the
-        // verticle's failureHandler that catches ctx.fail() calls. The
-        // shortest path to errorHandler is to POST /columns_info with a
-        // bare-name datasource the bridge has never seen: BaseRepository
-        // .get() throws IllegalArgumentException in multi-type mode,
-        // handleColumnsInfo catches and calls ctx.fail(e), which routes
-        // through the failureHandler chain to errorHandler.
+    public void testBridgeColumnsInfoUnknownDatasourceReturns404() throws Exception {
+        // POST /columns_info with a bare-name datasource the bridge has
+        // never seen. BaseRepository.get() throws
+        // IllegalArgumentException ("[does-not-exist] does not exist!")
+        // in multi-type mode; JdbcBridgeVerticle.getDataSource() catches
+        // and returns null so the handler's null-check fires and emits
+        // a clean 404 ("Datasource not found: ... Available
+        // datasources: [...]"). The 500 path is reserved for genuine
+        // internal failures (NPE etc).
         //
         // Same retry pattern as testBridgeQueryReturnsBytes — the cold-
         // first-call flake on MsSqlIT can hit the error path too (CI run
@@ -593,11 +594,49 @@ public abstract class AbstractBridgeIT {
             r = rawPostColumnsInfo("does-not-exist", smokeQuery());
         }
 
-        assertEquals(r.status, 500,
-                "unknown bare-name datasource must surface as 500; body=" + r.body);
+        assertEquals(r.status, 404,
+                "unknown bare-name datasource must surface as 404; body=" + r.body);
         assertNotNull(r.body);
-        assertTrue(r.body.contains("does not exist") || r.body.contains("not found"),
-                "errorHandler body must name the missing entity: " + r.body);
+        assertTrue(r.body.contains("Datasource not found"),
+                "404 body must lead with 'Datasource not found': " + r.body);
+        // The handler enumerates available datasources in the message —
+        // pin that the IT's seeded source shows up so we know the
+        // getUsageStats step ran.
+        assertTrue(r.body.contains(getDatasourceName()),
+                "404 body must list known datasources, including ["
+                        + getDatasourceName() + "]: " + r.body);
+    }
+
+    @Test(groups = { "sit" })
+    public void testBridgeColumnsInfoUnknownTypeReturns404() throws Exception {
+        // Same 404 path as testBridgeColumnsInfoUnknownDatasourceReturns404,
+        // but via the "typed-name with unknown type prefix" branch of
+        // BaseRepository.get. That hits the OTHER IAE site
+        // ("Unsupported type of NamedDataSource: no-such-driver-type"
+        // via getExtensionByType(autoCreate=false)), which getDataSource
+        // also normalizes to null. Both branches must collapse to the
+        // same clean 404.
+        ResponseAndBody r = null;
+        try {
+            r = rawPostColumnsInfo("no-such-driver-type:nope", smokeQuery());
+        } catch (Exception first) {
+            log.warn("[{}] First typed-miss call failed ({}); retrying once",
+                    getDatasourceName(), first.toString());
+            Thread.sleep(1000);
+            r = rawPostColumnsInfo("no-such-driver-type:nope", smokeQuery());
+        }
+        if (r == null || r.body == null || r.body.isEmpty()) {
+            log.warn("[{}] First typed-miss call returned empty body; retrying once",
+                    getDatasourceName());
+            Thread.sleep(1000);
+            r = rawPostColumnsInfo("no-such-driver-type:nope", smokeQuery());
+        }
+
+        assertEquals(r.status, 404,
+                "unknown type prefix must surface as 404; body=" + r.body);
+        assertNotNull(r.body);
+        assertTrue(r.body.contains("Datasource not found"),
+                "404 body must lead with 'Datasource not found': " + r.body);
     }
 
     @Test(groups = { "sit" })

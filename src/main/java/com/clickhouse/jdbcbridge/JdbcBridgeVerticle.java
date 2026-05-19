@@ -394,7 +394,24 @@ public class JdbcBridgeVerticle extends AbstractVerticle implements ExtensionMan
     }
 
     NamedDataSource getDataSource(Repository<NamedDataSource> repo, String uri, boolean orCreate) {
-        NamedDataSource ds = repo.get(uri);
+        // BaseRepository.get throws IllegalArgumentException in multi-type mode when:
+        //   - bare-name miss: "NamedDataSource [<id>] does not exist!"
+        //   - typed-name with unknown prefix: "Unsupported type of NamedDataSource: <type>"
+        //     (createFromType -> getExtensionByType(autoCreate=false) throws)
+        // Both are semantically "datasource not found". Convert to null so the
+        // caller's null-check + 404 fallback fires consistently rather than
+        // bubbling out as a 500 via the verticle's outer catch / errorHandler.
+        // This makes /columns_info and /query return 404 (correct semantic)
+        // instead of 500 for unknown-datasource requests.
+        NamedDataSource ds;
+        try {
+            ds = repo.get(uri);
+        } catch (IllegalArgumentException notFound) {
+            if (log.isDebugEnabled()) {
+                log.debug("Datasource lookup miss [{}]: {}", uri, notFound.getMessage());
+            }
+            ds = null;
+        }
         if (ds != null) {
             return ds;
         }
