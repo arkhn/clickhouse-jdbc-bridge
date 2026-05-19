@@ -407,9 +407,9 @@ public class JdbcBridgeVerticle extends AbstractVerticle implements ExtensionMan
         try {
             ds = repo.get(uri);
         } catch (IllegalArgumentException notFound) {
-            if (log.isDebugEnabled()) {
-                log.debug("Datasource lookup miss [{}]: {}", uri, notFound.getMessage());
-            }
+            // SLF4J parameterised logging defers formatting when debug is off,
+            // so the isDebugEnabled guard would be redundant overhead.
+            log.debug("Datasource lookup miss [{}]: {}", uri, notFound.getMessage());
             ds = null;
         }
         if (ds != null) {
