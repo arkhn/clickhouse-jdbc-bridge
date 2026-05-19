@@ -408,63 +408,56 @@ public abstract class AbstractBridgeIT {
 
     // -- Standard smoke tests --
 
+    @FunctionalInterface
+    private interface ITAction<T> { T call() throws Exception; }
+
+    /**
+     * Run {@code action}, retrying once if it throws OR returns null/empty body.
+     * Captures the cold-first-call streaming flake seen on MsSqlIT/MySqlIT/PostgresIT/MariaDbIT
+     * (CI runs 26066103571, 26066184225, 26082649080, 26084503000).
+     */
+    private <T> T retryOnFlake(String label, ITAction<T> action, java.util.function.Predicate<T> isFlake)
+            throws Exception {
+        T result;
+        try {
+            result = action.call();
+        } catch (Exception first) {
+            log.warn("[{}] First {} call failed ({}); retrying once",
+                    getDatasourceName(), label, first.toString());
+            Thread.sleep(1000);
+            result = action.call();
+        }
+        if (isFlake.test(result)) {
+            log.warn("[{}] First {} call returned empty body; retrying once",
+                    getDatasourceName(), label);
+            Thread.sleep(1000);
+            result = action.call();
+        }
+        return result;
+    }
+
+    private String getWithRetry(String label, ITAction<String> action) throws Exception {
+        return retryOnFlake(label, action, s -> s == null || s.isEmpty());
+    }
+
+    private ResponseAndBody respWithRetry(String label, ITAction<ResponseAndBody> action) throws Exception {
+        return retryOnFlake(label, action, r -> r == null || r.body == null || r.body.isEmpty());
+    }
+
     @Test(groups = { "sit" })
     public void testBridgePing() throws Exception {
-        // Same retry-once pattern as other HTTP IT steps. /ping doesn't
-        // touch JDBC, so it shouldn't flake — but if the bridge itself
-        // had a streaming hiccup we want the test to ride it out rather
-        // than spuriously failing CI.
-        String body = null;
-        try {
-            body = rawGetPath("/ping");
-        } catch (Exception first) {
-            log.warn("[{}] First /ping call failed ({}); retrying once",
-                    getDatasourceName(), first.toString());
-            Thread.sleep(1000);
-            body = rawGetPath("/ping");
-        }
-        if (body == null || body.isEmpty()) {
-            log.warn("[{}] First /ping call returned empty body; retrying once",
-                    getDatasourceName());
-            Thread.sleep(1000);
-            body = rawGetPath("/ping");
-        }
+        String body = getWithRetry("/ping", () -> rawGetPath("/ping"));
         assertNotNull(body);
         assertTrue(body.contains("Ok."), "expected 'Ok.' in /ping body; got: " + body);
     }
 
     @Test(groups = { "sit" })
     public void testBridgeQueryReturnsBytes() throws Exception {
-        // One retry on transient failure: warmup proved the bridge works,
-        // but MsSqlIT has been seen to hit a cold-connection / streaming
-        // stall on the very first post-warmup call (Hikari acquiring a
-        // fresh JDBC connection after a brief idle, mssql-jdbc prelogin
-        // is slow on CI). A single retry rides out that one-shot blip
-        // without weakening the assertion.
-        //
-        // The retry must cover BOTH failure modes the bridge has shown us:
-        //   1) postQuery throws (e.g. TimeoutException) — original case
-        //   2) postQuery succeeds with status 200 but body is empty — a
-        //      streaming race in the bridge where resp.end() fires before
-        //      the chunked write reaches the socket. Hit on PostgresIT and
-        //      MariaDbIT in CI runs 26066103571 / 26066184225.
-        // Catching only `Exception` misses case 2; we explicitly retry on
-        // empty body too.
-        String body = null;
-        try {
-            body = postQuery(getDatasourceName(), smokeQuery());
-        } catch (Exception first) {
-            log.warn("[{}] First smoke query failed ({}); retrying once",
-                    getDatasourceName(), first.toString());
-            Thread.sleep(1000);
-            body = postQuery(getDatasourceName(), smokeQuery());
-        }
-        if (body == null || body.isEmpty()) {
-            log.warn("[{}] First smoke query returned an empty body; retrying once",
-                    getDatasourceName());
-            Thread.sleep(1000);
-            body = postQuery(getDatasourceName(), smokeQuery());
-        }
+        // MsSqlIT has been seen to hit a cold-connection/streaming stall on
+        // the first post-warmup call (Hikari acquiring fresh JDBC conn,
+        // mssql-jdbc prelogin slow on CI). Empty-body path is the bridge's
+        // streaming race (resp.end() before chunked write hits socket).
+        String body = getWithRetry("smoke query", () -> postQuery(getDatasourceName(), smokeQuery()));
         assertNotNull(body);
         assertTrue(body.length() > 0, "expected non-empty response from [" + smokeQuery() + "]");
     }
@@ -507,31 +500,9 @@ public abstract class AbstractBridgeIT {
 
     @Test(groups = { "sit" })
     public void testBridgeIdentifierQuote() throws Exception {
-        // Exercises handleIdentifierQuote — ClickHouse polls this to
-        // discover the JDBC identifier-quote character (a backtick for
-        // every bridge-backed datasource today).
-        //
-        // Same retry-once pattern as testBridgeQueryReturnsBytes — the
-        // cold-first-call streaming flake on MsSqlIT/MySqlIT can hit any
-        // HTTP IT step. CI run 26084503000 caught it here.
-        ResponseAndBody r = null;
-        try {
-            r = rawPostEmpty("/identifier_quote");
-        } catch (Exception first) {
-            log.warn("[{}] First /identifier_quote call failed ({}); retrying once",
-                    getDatasourceName(), first.toString());
-            Thread.sleep(1000);
-            r = rawPostEmpty("/identifier_quote");
-        }
-        if (r == null || r.body == null || r.body.isEmpty()) {
-            log.warn("[{}] First /identifier_quote call returned empty body; retrying once",
-                    getDatasourceName());
-            Thread.sleep(1000);
-            r = rawPostEmpty("/identifier_quote");
-        }
-
-        assertEquals(r.status, 200,
-                "/identifier_quote must return 200; body=" + r.body);
+        // ClickHouse polls /identifier_quote to discover the JDBC identifier-quote char (backtick today).
+        ResponseAndBody r = respWithRetry("/identifier_quote", () -> rawPostEmpty("/identifier_quote"));
+        assertEquals(r.status, 200, "/identifier_quote must return 200; body=" + r.body);
         assertNotNull(r.body);
         assertTrue(r.body.contains("`"),
                 "/identifier_quote must return the backtick character; got: " + r.body);
@@ -539,69 +510,21 @@ public abstract class AbstractBridgeIT {
 
     @Test(groups = { "sit" })
     public void testBridgeSchemaAllowed() throws Exception {
-        // Exercises handleSchemaAllowed — ClickHouse polls this to
-        // discover whether the bridge accepts schema-qualified table
-        // references. The bridge always says "yes" ("1\n").
-        //
-        // Same retry-once pattern as testBridgeQueryReturnsBytes.
-        String body = null;
-        try {
-            body = rawGetPath("/schema_allowed");
-        } catch (Exception first) {
-            log.warn("[{}] First /schema_allowed call failed ({}); retrying once",
-                    getDatasourceName(), first.toString());
-            Thread.sleep(1000);
-            body = rawGetPath("/schema_allowed");
-        }
-        if (body == null || body.isEmpty()) {
-            log.warn("[{}] First /schema_allowed call returned empty body; retrying once",
-                    getDatasourceName());
-            Thread.sleep(1000);
-            body = rawGetPath("/schema_allowed");
-        }
-
+        // ClickHouse polls /schema_allowed to discover whether the bridge accepts schema-qualified tables.
+        String body = getWithRetry("/schema_allowed", () -> rawGetPath("/schema_allowed"));
         assertEquals(body, "1\n",
                 "/schema_allowed must return the literal \"1\\n\"; got: " + body);
     }
 
     @Test(groups = { "sit" })
     public void testBridgeColumnsInfoUnknownDatasourceReturns404() throws Exception {
-        // POST /columns_info with a bare-name datasource the bridge has
-        // never seen. BaseRepository.get() throws
-        // IllegalArgumentException ("[does-not-exist] does not exist!")
-        // in multi-type mode; JdbcBridgeVerticle.getDataSource() catches
-        // and returns null so the handler's null-check fires and emits
-        // a clean 404 ("Datasource not found: ... Available
-        // datasources: [...]"). The 500 path is reserved for genuine
-        // internal failures (NPE etc).
-        //
-        // Same retry pattern as testBridgeQueryReturnsBytes — the cold-
-        // first-call flake on MsSqlIT can hit the error path too (CI run
-        // 26082649080 caught it).
-        ResponseAndBody r = null;
-        try {
-            r = rawPostColumnsInfo("does-not-exist", smokeQuery());
-        } catch (Exception first) {
-            log.warn("[{}] First error-path call failed ({}); retrying once",
-                    getDatasourceName(), first.toString());
-            Thread.sleep(1000);
-            r = rawPostColumnsInfo("does-not-exist", smokeQuery());
-        }
-        if (r == null || r.body == null || r.body.isEmpty()) {
-            log.warn("[{}] First error-path call returned empty body; retrying once",
-                    getDatasourceName());
-            Thread.sleep(1000);
-            r = rawPostColumnsInfo("does-not-exist", smokeQuery());
-        }
-
-        assertEquals(r.status, 404,
-                "unknown bare-name datasource must surface as 404; body=" + r.body);
+        // Bare-name miss: BaseRepository.get throws IAE -> getDataSource catches -> null -> 404 path.
+        ResponseAndBody r = respWithRetry("404 bare-name",
+                () -> rawPostColumnsInfo("does-not-exist", smokeQuery()));
+        assertEquals(r.status, 404, "unknown bare-name datasource must surface as 404; body=" + r.body);
         assertNotNull(r.body);
         assertTrue(r.body.contains("Datasource not found"),
                 "404 body must lead with 'Datasource not found': " + r.body);
-        // The handler enumerates available datasources in the message —
-        // pin that the IT's seeded source shows up so we know the
-        // getUsageStats step ran.
         assertTrue(r.body.contains(getDatasourceName()),
                 "404 body must list known datasources, including ["
                         + getDatasourceName() + "]: " + r.body);
@@ -609,31 +532,10 @@ public abstract class AbstractBridgeIT {
 
     @Test(groups = { "sit" })
     public void testBridgeQueryUnknownDatasourceReturns404() throws Exception {
-        // Same 404 path as testBridgeColumnsInfoUnknownDatasourceReturns404
-        // but via handleQuery (POST /) — handleQuery has its own
-        // (ds == null -> 404) fallback that was previously unreachable
-        // for the same reason: repo.get threw IAE rather than returning
-        // null. Now that getDataSource normalizes IAE -> null, this
-        // path is also live and the bridge returns a consistent 404
-        // for both /columns_info and / when the datasource is unknown.
-        ResponseAndBody r = null;
-        try {
-            r = rawPostQueryWithStatus("does-not-exist", smokeQuery());
-        } catch (Exception first) {
-            log.warn("[{}] First query 404 call failed ({}); retrying once",
-                    getDatasourceName(), first.toString());
-            Thread.sleep(1000);
-            r = rawPostQueryWithStatus("does-not-exist", smokeQuery());
-        }
-        if (r == null || r.body == null || r.body.isEmpty()) {
-            log.warn("[{}] First query 404 call returned empty body; retrying once",
-                    getDatasourceName());
-            Thread.sleep(1000);
-            r = rawPostQueryWithStatus("does-not-exist", smokeQuery());
-        }
-
-        assertEquals(r.status, 404,
-                "unknown datasource on / must surface as 404; body=" + r.body);
+        // handleQuery (POST /) has its own ds==null -> 404 fallback; same path as columns_info.
+        ResponseAndBody r = respWithRetry("query 404",
+                () -> rawPostQueryWithStatus("does-not-exist", smokeQuery()));
+        assertEquals(r.status, 404, "unknown datasource on / must surface as 404; body=" + r.body);
         assertNotNull(r.body);
         assertTrue(r.body.contains("does-not-exist") || r.body.contains("not found"),
                 "/ 404 body must name the missing datasource: " + r.body);
@@ -641,31 +543,10 @@ public abstract class AbstractBridgeIT {
 
     @Test(groups = { "sit" })
     public void testBridgeColumnsInfoUnknownTypeReturns404() throws Exception {
-        // Same 404 path as testBridgeColumnsInfoUnknownDatasourceReturns404,
-        // but via the "typed-name with unknown type prefix" branch of
-        // BaseRepository.get. That hits the OTHER IAE site
-        // ("Unsupported type of NamedDataSource: no-such-driver-type"
-        // via getExtensionByType(autoCreate=false)), which getDataSource
-        // also normalizes to null. Both branches must collapse to the
-        // same clean 404.
-        ResponseAndBody r = null;
-        try {
-            r = rawPostColumnsInfo("no-such-driver-type:nope", smokeQuery());
-        } catch (Exception first) {
-            log.warn("[{}] First typed-miss call failed ({}); retrying once",
-                    getDatasourceName(), first.toString());
-            Thread.sleep(1000);
-            r = rawPostColumnsInfo("no-such-driver-type:nope", smokeQuery());
-        }
-        if (r == null || r.body == null || r.body.isEmpty()) {
-            log.warn("[{}] First typed-miss call returned empty body; retrying once",
-                    getDatasourceName());
-            Thread.sleep(1000);
-            r = rawPostColumnsInfo("no-such-driver-type:nope", smokeQuery());
-        }
-
-        assertEquals(r.status, 404,
-                "unknown type prefix must surface as 404; body=" + r.body);
+        // Typed-name with unknown prefix: createFromType -> getExtensionByType throws IAE -> normalized to null -> 404.
+        ResponseAndBody r = respWithRetry("typed-miss 404",
+                () -> rawPostColumnsInfo("no-such-driver-type:nope", smokeQuery()));
+        assertEquals(r.status, 404, "unknown type prefix must surface as 404; body=" + r.body);
         assertNotNull(r.body);
         assertTrue(r.body.contains("Datasource not found"),
                 "404 body must lead with 'Datasource not found': " + r.body);
@@ -673,36 +554,11 @@ public abstract class AbstractBridgeIT {
 
     @Test(groups = { "sit" })
     public void testBridgeColumnsInfo() throws Exception {
-        // Exercises the /columns_info HTTP route -> handleColumnsInfo on
-        // every backend. handleColumnsInfo's pure-logic seam
-        // (resolveColumnsTableDef) is unit-tested directly; the handler
-        // SHELL needs an HTTP invocation to count toward coverage,
-        // otherwise codecov's patch-coverage check stays at ~50% even
-        // though the seam is at 100%.
-        //
-        // Same retry pattern as testBridgeQueryReturnsBytes — column-info
-        // inference may also hit the empty-body streaming race on first
-        // call after warmup.
-        String body = null;
-        try {
-            body = postColumnsInfo(getDatasourceName(), smokeQuery());
-        } catch (Exception first) {
-            log.warn("[{}] First columns_info call failed ({}); retrying once",
-                    getDatasourceName(), first.toString());
-            Thread.sleep(1000);
-            body = postColumnsInfo(getDatasourceName(), smokeQuery());
-        }
-        if (body == null || body.isEmpty()) {
-            log.warn("[{}] First columns_info call returned empty body; retrying once",
-                    getDatasourceName());
-            Thread.sleep(1000);
-            body = postColumnsInfo(getDatasourceName(), smokeQuery());
-        }
+        // /columns_info HTTP shell — the resolveColumnsTableDef seam is unit-tested directly;
+        // this IT covers the handler shell so codecov patch coverage doesn't stall ~50%.
+        String body = getWithRetry("/columns_info",
+                () -> postColumnsInfo(getDatasourceName(), smokeQuery()));
         assertNotNull(body);
-        // The wire format begins with "columns format version: " — a
-        // regression that dropped the header would break ClickHouse-side
-        // column parsing. Pin the header prefix so changes here trip
-        // this test loudly.
         assertTrue(body.contains("columns format version"),
                 "expected /columns_info to return the columns-format header; got: " + body);
     }
