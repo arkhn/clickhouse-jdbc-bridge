@@ -340,11 +340,22 @@ public abstract class AbstractBridgeIT {
 
     private ResponseAndBody rawPostQueryWithStatus(String connectionString, String tableOrSql)
             throws Exception {
+        return rawPostToPath("/", connectionString, tableOrSql);
+    }
+
+    /**
+     * POST a form-encoded {@code connection_string} + {@code table} to the
+     * given bridge path. Used by the smoke tests to exercise both
+     * {@code POST /} (handleQuery) and {@code POST /columns_info}
+     * (handleColumnsInfo) with the same retry-on-flake pattern.
+     */
+    private ResponseAndBody rawPostToPath(String path, String connectionString, String tableOrSql)
+            throws Exception {
         HttpClient client = vertx.createHttpClient();
         CompletableFuture<HttpClientResponse> respFuture = new CompletableFuture<>();
         String body = "connection_string=" + URLEncoder.encode(connectionString, "UTF-8")
                 + "&table=" + URLEncoder.encode(tableOrSql, "UTF-8");
-        client.request(HttpMethod.POST, bridgePort, "localhost", "/")
+        client.request(HttpMethod.POST, bridgePort, "localhost", path)
                 .onSuccess(req -> {
                     req.putHeader("Content-Type", "application/x-www-form-urlencoded")
                             .send(body)
@@ -360,6 +371,18 @@ public abstract class AbstractBridgeIT {
                 .onFailure(bodyFuture::completeExceptionally);
         return new ResponseAndBody(resp.statusCode(),
                 bodyFuture.get(HTTP_BODY_TIMEOUT_SECONDS, TimeUnit.SECONDS));
+    }
+
+    /**
+     * POST {@code connection_string} + {@code table} to {@code /columns_info}.
+     * Used by the smoke test to assert that the bridge's column-inference
+     * path returns the wire-format declaration ClickHouse expects.
+     */
+    protected String postColumnsInfo(String connectionString, String tableOrSql) throws Exception {
+        ResponseAndBody r = rawPostToPath("/columns_info", connectionString, tableOrSql);
+        assertEquals(r.status, 200,
+                "Expected 200 from /columns_info for [" + tableOrSql + "]; body=" + r.body);
+        return r.body;
     }
 
     private String doPostQuery(String connectionString, String tableOrSql, boolean assert200)
@@ -423,5 +446,41 @@ public abstract class AbstractBridgeIT {
         }
         assertNotNull(body);
         assertTrue(body.length() > 0, "expected non-empty response from [" + smokeQuery() + "]");
+    }
+
+    @Test(groups = { "sit" })
+    public void testBridgeColumnsInfo() throws Exception {
+        // Exercises the /columns_info HTTP route -> handleColumnsInfo on
+        // every backend. handleColumnsInfo's pure-logic seam
+        // (resolveColumnsTableDef) is unit-tested directly; the handler
+        // SHELL needs an HTTP invocation to count toward coverage,
+        // otherwise codecov's patch-coverage check stays at ~50% even
+        // though the seam is at 100%.
+        //
+        // Same retry pattern as testBridgeQueryReturnsBytes — column-info
+        // inference may also hit the empty-body streaming race on first
+        // call after warmup.
+        String body = null;
+        try {
+            body = postColumnsInfo(getDatasourceName(), smokeQuery());
+        } catch (Exception first) {
+            log.warn("[{}] First columns_info call failed ({}); retrying once",
+                    getDatasourceName(), first.toString());
+            Thread.sleep(1000);
+            body = postColumnsInfo(getDatasourceName(), smokeQuery());
+        }
+        if (body == null || body.isEmpty()) {
+            log.warn("[{}] First columns_info call returned empty body; retrying once",
+                    getDatasourceName());
+            Thread.sleep(1000);
+            body = postColumnsInfo(getDatasourceName(), smokeQuery());
+        }
+        assertNotNull(body);
+        // The wire format begins with "columns format version: " — a
+        // regression that dropped the header would break ClickHouse-side
+        // column parsing. Pin the header prefix so changes here trip
+        // this test loudly.
+        assertTrue(body.contains("columns format version"),
+                "expected /columns_info to return the columns-format header; got: " + body);
     }
 }
