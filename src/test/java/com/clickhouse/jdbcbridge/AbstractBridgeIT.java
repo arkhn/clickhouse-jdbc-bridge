@@ -601,6 +601,52 @@ public abstract class AbstractBridgeIT {
     }
 
     @Test(groups = { "sit" })
+    public void testBridgeColumnsInfoNoResolutionHits404() throws Exception {
+        // Exercises the 404 branch in handleColumnsInfo: when every
+        // resolution step misses (no named schema, no inline schema, no
+        // named query, no datasource), the handler builds a
+        // "Datasource not found: ... Available datasources: [...]"
+        // message and calls ctx.fail(404, ...).
+        //
+        // Driving this requires a connection_string the data-source repo
+        // returns null for (rather than throwing): the repo throws on a
+        // bare-name miss in multi-type mode, but a "<unknown-type>:<id>"
+        // shape routes through createFromType and yields null when the
+        // type-prefix has no registered extension. AdhocPolicy is
+        // disabled by default, so getDataSource() returns null instead
+        // of constructing an adhoc datasource.
+        //
+        // Same retry-once pattern as the other IT steps — the cold-call
+        // streaming flake can hit error paths too.
+        ResponseAndBody r = null;
+        try {
+            r = rawPostColumnsInfo("no-such-driver-type:nope", "");
+        } catch (Exception first) {
+            log.warn("[{}] First 404-path call failed ({}); retrying once",
+                    getDatasourceName(), first.toString());
+            Thread.sleep(1000);
+            r = rawPostColumnsInfo("no-such-driver-type:nope", "");
+        }
+        if (r == null || r.body == null || r.body.isEmpty()) {
+            log.warn("[{}] First 404-path call returned empty body; retrying once",
+                    getDatasourceName());
+            Thread.sleep(1000);
+            r = rawPostColumnsInfo("no-such-driver-type:nope", "");
+        }
+
+        assertEquals(r.status, 404,
+                "no-resolution path must surface as 404 (not 500); body=" + r.body);
+        assertNotNull(r.body);
+        assertTrue(r.body.contains("Datasource not found"),
+                "404 body must lead with 'Datasource not found': " + r.body);
+        // Available datasources list must include this IT's seeded source,
+        // proving the handler ran the getUsageStats() collection step.
+        assertTrue(r.body.contains(getDatasourceName()),
+                "404 body must list known datasources, including ["
+                        + getDatasourceName() + "]: " + r.body);
+    }
+
+    @Test(groups = { "sit" })
     public void testBridgeColumnsInfo() throws Exception {
         // Exercises the /columns_info HTTP route -> handleColumnsInfo on
         // every backend. handleColumnsInfo's pure-logic seam
