@@ -23,88 +23,57 @@ import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.sql.JDBCType;
 
+import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
 
 /**
- * Exercises the default methods on the {@link DataTypeConverter} interface
- * ({@code as()} value coercer + {@code toMType()} mapping).
+ * Default methods on {@link DataTypeConverter}: as() value coercer and toMType() mapping.
  */
 public class DataTypeConverterTest {
 
     private static final DataTypeConverter CONV = new DataTypeConverter() {
-        @Override
-        public DataType from(JDBCType jdbcType, String typeName, int precision, int scale, boolean signed) {
+        @Override public DataType from(JDBCType jdbcType, String typeName, int p, int s, boolean signed) {
             return DataType.Str;
         }
-
-        @Override
-        public DataType from(Object javaObject) {
-            return DataType.Str;
-        }
+        @Override public DataType from(Object javaObject) { return DataType.Str; }
     };
 
-    @Test(groups = { "unit" })
-    public void asBooleanHandlesBooleanInput() {
-        assertEquals(CONV.as(Boolean.class, Boolean.TRUE), Boolean.TRUE);
-        assertEquals(CONV.as(Boolean.class, Boolean.FALSE), Boolean.FALSE);
+    @DataProvider(name = "numericCoercions")
+    Object[][] numericCoercions() {
+        // (targetClass, input, expected) — every numeric branch of as(): number, boolean (true=0/false=1 codebase convention), string parse.
+        return new Object[][] {
+            { Byte.class,    5,                  (byte) 5 },
+            { Byte.class,    true,               (byte) 0 },
+            { Byte.class,    false,              (byte) 1 },
+            { Byte.class,    "42",               (byte) 42 },
+            { Short.class,   7,                  (short) 7 },
+            { Short.class,   true,               (short) 0 },
+            { Short.class,   false,              (short) 1 },
+            { Short.class,   "10000",            (short) 10000 },
+            { Integer.class, 9L,                 9 },
+            { Integer.class, true,               0 },
+            { Integer.class, false,              1 },
+            { Integer.class, "12345",            12345 },
+            { Long.class,    9,                  9L },
+            { Long.class,    true,               0L },
+            { Long.class,    false,              1L },
+            { Long.class,    "999999999999",     999_999_999_999L },
+        };
+    }
+
+    @SuppressWarnings({ "rawtypes", "unchecked" })
+    @Test(groups = { "unit" }, dataProvider = "numericCoercions")
+    public void as_numericFamilies(Class target, Object input, Object expected) {
+        assertEquals(CONV.as(target, input), expected);
     }
 
     @Test(groups = { "unit" })
-    public void asBooleanTreatsZeroAsFalse() {
-        assertEquals(CONV.as(Boolean.class, 0), Boolean.FALSE);
-        assertEquals(CONV.as(Boolean.class, 7), Boolean.TRUE);
-    }
-
-    @Test(groups = { "unit" })
-    public void asBooleanParsesStrings() {
-        assertEquals(CONV.as(Boolean.class, "true"), Boolean.TRUE);
-        assertEquals(CONV.as(Boolean.class, "false"), Boolean.FALSE);
-        assertEquals(CONV.as(Boolean.class, "garbage"), Boolean.FALSE);
-    }
-
-    @Test(groups = { "unit" })
-    public void asByteAcceptsNumberBooleanAndString() {
-        // Boolean branch: true -> 0, false -> 1 (codebase convention).
-        assertEquals((byte) CONV.as(Byte.class, 5), (byte) 5);
-        assertEquals((byte) CONV.as(Byte.class, true), (byte) 0);
-        assertEquals((byte) CONV.as(Byte.class, false), (byte) 1);
-        assertEquals((byte) CONV.as(Byte.class, "42"), (byte) 42);
-    }
-
-    @Test(groups = { "unit" })
-    public void asShortAcceptsNumberBooleanAndString() {
-        assertEquals((short) CONV.as(Short.class, 7), (short) 7);
-        assertEquals((short) CONV.as(Short.class, true), (short) 0);
-        assertEquals((short) CONV.as(Short.class, false), (short) 1);
-        assertEquals((short) CONV.as(Short.class, "10000"), (short) 10000);
-    }
-
-    @Test(groups = { "unit" })
-    public void asIntegerAcceptsNumberBooleanAndString() {
-        assertEquals((int) CONV.as(Integer.class, 9L), 9);
-        assertEquals((int) CONV.as(Integer.class, true), 0);
-        assertEquals((int) CONV.as(Integer.class, false), 1);
-        assertEquals((int) CONV.as(Integer.class, "12345"), 12345);
-    }
-
-    @Test(groups = { "unit" })
-    public void asLongAcceptsNumberBooleanAndString() {
-        assertEquals((long) CONV.as(Long.class, 9), 9L);
-        assertEquals((long) CONV.as(Long.class, true), 0L);
-        assertEquals((long) CONV.as(Long.class, false), 1L);
-        assertEquals((long) CONV.as(Long.class, "999999999999"), 999999999999L);
-    }
-
-    @Test(groups = { "unit" })
-    public void asFloatAcceptsNumberBooleanAndString() {
+    public void as_floatAndDouble_familiesAcceptNumberBooleanAndString() {
         assertEquals((float) CONV.as(Float.class, 1.5d), 1.5f, 0f);
         assertEquals((float) CONV.as(Float.class, true), 0.0f, 0f);
         assertEquals((float) CONV.as(Float.class, false), 1.0f, 0f);
         assertEquals((float) CONV.as(Float.class, "2.25"), 2.25f, 0f);
-    }
 
-    @Test(groups = { "unit" })
-    public void asDoubleAcceptsNumberBooleanAndString() {
         assertEquals((double) CONV.as(Double.class, 3.14f), 3.14d, 0.001d);
         assertEquals((double) CONV.as(Double.class, true), 0.0d, 0d);
         assertEquals((double) CONV.as(Double.class, false), 1.0d, 0d);
@@ -112,122 +81,103 @@ public class DataTypeConverterTest {
     }
 
     @Test(groups = { "unit" })
-    public void asBigIntegerHandlesAllBranches() {
-        assertSame(CONV.as(BigInteger.class, true), BigInteger.ZERO);
-        assertSame(CONV.as(BigInteger.class, false), BigInteger.ONE);
-        BigInteger passthrough = BigInteger.valueOf(42);
-        assertSame(CONV.as(BigInteger.class, passthrough), passthrough);
-        assertEquals(CONV.as(BigInteger.class, "17"), BigInteger.valueOf(17));
+    public void as_booleanCoerces_boolean_int_string() {
+        assertEquals(CONV.as(Boolean.class, Boolean.TRUE), Boolean.TRUE);
+        assertEquals(CONV.as(Boolean.class, Boolean.FALSE), Boolean.FALSE);
+        assertEquals(CONV.as(Boolean.class, 0), Boolean.FALSE);
+        assertEquals(CONV.as(Boolean.class, 7), Boolean.TRUE);
+        assertEquals(CONV.as(Boolean.class, "true"), Boolean.TRUE);
+        assertEquals(CONV.as(Boolean.class, "false"), Boolean.FALSE);
+        assertEquals(CONV.as(Boolean.class, "garbage"), Boolean.FALSE);
     }
 
     @Test(groups = { "unit" })
-    public void asBigDecimalHandlesAllBranches() {
+    public void as_bigInteger_and_bigDecimal() {
+        assertSame(CONV.as(BigInteger.class, true), BigInteger.ZERO);
+        assertSame(CONV.as(BigInteger.class, false), BigInteger.ONE);
+        BigInteger biIn = BigInteger.valueOf(42);
+        assertSame(CONV.as(BigInteger.class, biIn), biIn);
+        assertEquals(CONV.as(BigInteger.class, "17"), BigInteger.valueOf(17));
+
         assertSame(CONV.as(BigDecimal.class, true), BigDecimal.ZERO);
         assertSame(CONV.as(BigDecimal.class, false), BigDecimal.ONE);
-        BigDecimal passthrough = new BigDecimal("3.14159");
-        assertSame(CONV.as(BigDecimal.class, passthrough), passthrough);
+        BigDecimal bdIn = new BigDecimal("3.14159");
+        assertSame(CONV.as(BigDecimal.class, bdIn), bdIn);
         assertEquals(CONV.as(BigDecimal.class, "2.5"), new BigDecimal("2.5"));
     }
 
-    @Test(groups = { "unit" })
-    public void asDateFromIsoLocalDateString() {
-        // len == 10 -> java.sql.Date
-        Object d = CONV.as(java.util.Date.class, "2026-05-18");
-        assertEquals(d.getClass(), java.sql.Date.class);
+    @DataProvider(name = "dateFromString")
+    Object[][] dateFromString() {
+        // String length picks the formatter: 10 -> Date, 19 -> Timestamp, >19 -> Timestamp(ISO_DATE_TIME), <10 -> BASIC_ISO_DATE -> Date.
+        return new Object[][] {
+            { "2026-05-18",              java.sql.Date.class },
+            { "2026-05-18T22:00:00",     java.sql.Timestamp.class },
+            { "2026-05-18T22:00:00.123", java.sql.Timestamp.class },
+            { "20260518",                java.sql.Date.class },
+        };
+    }
+
+    @Test(groups = { "unit" }, dataProvider = "dateFromString")
+    public void as_dateFromString_picksFormatterByLength(String input, Class<?> expected) {
+        assertEquals(CONV.as(java.util.Date.class, input).getClass(), expected);
     }
 
     @Test(groups = { "unit" })
-    public void asDateFromIsoLocalDateTimeString() {
-        // len == 19 -> java.sql.Timestamp
-        Object d = CONV.as(java.util.Date.class, "2026-05-18T22:00:00");
-        assertEquals(d.getClass(), java.sql.Timestamp.class);
+    public void as_dateFromNumberAndBoolean() {
+        assertEquals(((java.util.Date) CONV.as(java.util.Date.class, 0L)).getTime(), 0L);
+        assertEquals(((java.util.Date) CONV.as(java.util.Date.class, true)).getTime(), 0L);
+        assertEquals(((java.util.Date) CONV.as(java.util.Date.class, false)).getTime(), 1L);
     }
 
     @Test(groups = { "unit" })
-    public void asDateFromIsoDateTimeWithOffsetString() {
-        // len > 19 -> Timestamp via ISO_DATE_TIME
-        Object d = CONV.as(java.util.Date.class, "2026-05-18T22:00:00.123");
-        assertEquals(d.getClass(), java.sql.Timestamp.class);
-    }
-
-    @Test(groups = { "unit" })
-    public void asDateFromBasicIsoFallback() {
-        // len < 10 -> BASIC_ISO_DATE (yyyyMMdd)
-        Object d = CONV.as(java.util.Date.class, "20260518");
-        assertEquals(d.getClass(), java.sql.Date.class);
-    }
-
-    @Test(groups = { "unit" })
-    public void asDateFromNumberUsesEpochMillis() {
-        Object d = CONV.as(java.util.Date.class, 0L);
-        assertEquals(d.getClass(), java.util.Date.class);
-        assertEquals(((java.util.Date) d).getTime(), 0L);
-    }
-
-    @Test(groups = { "unit" })
-    public void asDateFromBooleanProducesEpoch() {
-        Object dTrue = CONV.as(java.util.Date.class, true);
-        Object dFalse = CONV.as(java.util.Date.class, false);
-        assertEquals(((java.util.Date) dTrue).getTime(), 0L);
-        assertEquals(((java.util.Date) dFalse).getTime(), 1L);
-    }
-
-    @Test(groups = { "unit" })
-    public void asStringStringifiesAnything() {
+    public void as_stringStringifiesAnything_andUnsupportedTypeIsPassthrough() {
         assertEquals(CONV.as(String.class, 42), "42");
         assertEquals(CONV.as(String.class, true), "true");
         assertEquals(CONV.as(String.class, null), "null");
-    }
-
-    @Test(groups = { "unit" })
-    public void asUnsupportedTypeReturnsValueUntouched() {
         Object marker = new Object();
         assertSame(CONV.as(Object.class, marker), marker);
     }
 
-    @Test(groups = { "unit" })
-    public void toMTypeMapsIntegerFamilies() {
-        assertEquals(CONV.toMType(DataType.Bool), DataTypeConverter.M_FACET_INT8);
-        assertEquals(CONV.toMType(DataType.Int8), DataTypeConverter.M_FACET_INT8);
-        assertEquals(CONV.toMType(DataType.UInt8), DataTypeConverter.M_FACET_INT16);
-        assertEquals(CONV.toMType(DataType.Int16), DataTypeConverter.M_FACET_INT16);
-        assertEquals(CONV.toMType(DataType.UInt16), DataTypeConverter.M_FACET_INT32);
-        assertEquals(CONV.toMType(DataType.Int32), DataTypeConverter.M_FACET_INT32);
-        assertEquals(CONV.toMType(DataType.UInt32), DataTypeConverter.M_FACET_INT64);
-        assertEquals(CONV.toMType(DataType.Int64), DataTypeConverter.M_FACET_INT64);
+    @DataProvider(name = "toMTypeMatrix")
+    Object[][] toMTypeMatrix() {
+        return new Object[][] {
+            // Integer families
+            { DataType.Bool,       DataTypeConverter.M_FACET_INT8 },
+            { DataType.Int8,       DataTypeConverter.M_FACET_INT8 },
+            { DataType.UInt8,      DataTypeConverter.M_FACET_INT16 },
+            { DataType.Int16,      DataTypeConverter.M_FACET_INT16 },
+            { DataType.UInt16,     DataTypeConverter.M_FACET_INT32 },
+            { DataType.Int32,      DataTypeConverter.M_FACET_INT32 },
+            { DataType.UInt32,     DataTypeConverter.M_FACET_INT64 },
+            { DataType.Int64,      DataTypeConverter.M_FACET_INT64 },
+            // Float families
+            { DataType.Float32,    DataTypeConverter.M_FACET_SINGLE },
+            { DataType.Float64,    DataTypeConverter.M_FACET_DOUBLE },
+            // Number family (UInt64 + every decimal width)
+            { DataType.UInt64,     DataTypeConverter.M_TYPE_NUMBER },
+            { DataType.Decimal,    DataTypeConverter.M_TYPE_NUMBER },
+            { DataType.Decimal32,  DataTypeConverter.M_TYPE_NUMBER },
+            { DataType.Decimal64,  DataTypeConverter.M_TYPE_NUMBER },
+            { DataType.Decimal128, DataTypeConverter.M_TYPE_NUMBER },
+            { DataType.Decimal256, DataTypeConverter.M_TYPE_NUMBER },
+            // Date / DateTime
+            { DataType.Date,       DataTypeConverter.M_TYPE_DATE },
+            { DataType.DateTime,   DataTypeConverter.M_TYPE_DATETIME },
+            { DataType.DateTime64, DataTypeConverter.M_TYPE_DATETIME },
+            // Text fallback
+            { DataType.Str,        DataTypeConverter.M_TYPE_TEXT },
+            { DataType.UUID,       DataTypeConverter.M_TYPE_TEXT },
+        };
+    }
+
+    @Test(groups = { "unit" }, dataProvider = "toMTypeMatrix")
+    public void toMType_mapsAllFamilies(DataType in, String expected) {
+        assertEquals(CONV.toMType(in), expected);
     }
 
     @Test(groups = { "unit" })
-    public void toMTypeMapsFloatFamilies() {
-        assertEquals(CONV.toMType(DataType.Float32), DataTypeConverter.M_FACET_SINGLE);
-        assertEquals(CONV.toMType(DataType.Float64), DataTypeConverter.M_FACET_DOUBLE);
-    }
-
-    @Test(groups = { "unit" })
-    public void toMTypeMapsNumberFamily() {
-        for (DataType t : new DataType[] {
-                DataType.UInt64, DataType.Decimal, DataType.Decimal32, DataType.Decimal64,
-                DataType.Decimal128, DataType.Decimal256 }) {
-            assertEquals(CONV.toMType(t), DataTypeConverter.M_TYPE_NUMBER, t.name());
-        }
-    }
-
-    @Test(groups = { "unit" })
-    public void toMTypeMapsDateAndDateTime() {
-        assertEquals(CONV.toMType(DataType.Date), DataTypeConverter.M_TYPE_DATE);
-        assertEquals(CONV.toMType(DataType.DateTime), DataTypeConverter.M_TYPE_DATETIME);
-        assertEquals(CONV.toMType(DataType.DateTime64), DataTypeConverter.M_TYPE_DATETIME);
-    }
-
-    @Test(groups = { "unit" })
-    public void toMTypeFallsBackToText() {
-        assertEquals(CONV.toMType(DataType.Str), DataTypeConverter.M_TYPE_TEXT);
-        assertEquals(CONV.toMType(DataType.UUID), DataTypeConverter.M_TYPE_TEXT);
-    }
-
-    @Test(groups = { "unit" })
-    public void toPowerQueryTypeReturnsConcreteMTypeNames() {
-        // Pin concrete outputs so a future change trips this test (not silently mirroring toMType).
+    public void toPowerQueryType_returnsConcreteMTypeNames() {
+        // Pin so a future change trips this test rather than silently mirroring toMType.
         assertEquals(CONV.toPowerQueryType(DataType.Str), DataTypeConverter.M_TYPE_TEXT);
         assertEquals(CONV.toPowerQueryType(DataType.Int32), DataTypeConverter.M_FACET_INT32);
         assertEquals(CONV.toPowerQueryType(DataType.Float64), DataTypeConverter.M_FACET_DOUBLE);
