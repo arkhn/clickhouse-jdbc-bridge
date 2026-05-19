@@ -397,12 +397,27 @@ public abstract class AbstractBridgeIT {
         // fresh JDBC connection after a brief idle, mssql-jdbc prelogin
         // is slow on CI). A single retry rides out that one-shot blip
         // without weakening the assertion.
-        String body;
+        //
+        // The retry must cover BOTH failure modes the bridge has shown us:
+        //   1) postQuery throws (e.g. TimeoutException) — original case
+        //   2) postQuery succeeds with status 200 but body is empty — a
+        //      streaming race in the bridge where resp.end() fires before
+        //      the chunked write reaches the socket. Hit on PostgresIT and
+        //      MariaDbIT in CI runs 26066103571 / 26066184225.
+        // Catching only `Exception` misses case 2; we explicitly retry on
+        // empty body too.
+        String body = null;
         try {
             body = postQuery(getDatasourceName(), smokeQuery());
         } catch (Exception first) {
             log.warn("[{}] First smoke query failed ({}); retrying once",
                     getDatasourceName(), first.toString());
+            Thread.sleep(1000);
+            body = postQuery(getDatasourceName(), smokeQuery());
+        }
+        if (body == null || body.isEmpty()) {
+            log.warn("[{}] First smoke query returned an empty body; retrying once",
+                    getDatasourceName());
             Thread.sleep(1000);
             body = postQuery(getDatasourceName(), smokeQuery());
         }
