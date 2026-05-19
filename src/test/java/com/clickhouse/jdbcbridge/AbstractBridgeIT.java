@@ -608,6 +608,38 @@ public abstract class AbstractBridgeIT {
     }
 
     @Test(groups = { "sit" })
+    public void testBridgeQueryUnknownDatasourceReturns404() throws Exception {
+        // Same 404 path as testBridgeColumnsInfoUnknownDatasourceReturns404
+        // but via handleQuery (POST /) — handleQuery has its own
+        // (ds == null -> 404) fallback that was previously unreachable
+        // for the same reason: repo.get threw IAE rather than returning
+        // null. Now that getDataSource normalizes IAE -> null, this
+        // path is also live and the bridge returns a consistent 404
+        // for both /columns_info and / when the datasource is unknown.
+        ResponseAndBody r = null;
+        try {
+            r = rawPostQueryWithStatus("does-not-exist", smokeQuery());
+        } catch (Exception first) {
+            log.warn("[{}] First query 404 call failed ({}); retrying once",
+                    getDatasourceName(), first.toString());
+            Thread.sleep(1000);
+            r = rawPostQueryWithStatus("does-not-exist", smokeQuery());
+        }
+        if (r == null || r.body == null || r.body.isEmpty()) {
+            log.warn("[{}] First query 404 call returned empty body; retrying once",
+                    getDatasourceName());
+            Thread.sleep(1000);
+            r = rawPostQueryWithStatus("does-not-exist", smokeQuery());
+        }
+
+        assertEquals(r.status, 404,
+                "unknown datasource on / must surface as 404; body=" + r.body);
+        assertNotNull(r.body);
+        assertTrue(r.body.contains("does-not-exist") || r.body.contains("not found"),
+                "/ 404 body must name the missing datasource: " + r.body);
+    }
+
+    @Test(groups = { "sit" })
     public void testBridgeColumnsInfoUnknownTypeReturns404() throws Exception {
         // Same 404 path as testBridgeColumnsInfoUnknownDatasourceReturns404,
         // but via the "typed-name with unknown type prefix" branch of
