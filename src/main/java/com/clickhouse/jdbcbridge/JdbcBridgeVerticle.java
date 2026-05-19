@@ -92,8 +92,15 @@ public class JdbcBridgeVerticle extends AbstractVerticle implements ExtensionMan
     private static final String RESPONSE_CONTENT_TYPE = "application/octet-stream";
 
     private static final String WRITE_RESPONSE = "Ok.";
-    private static final String PING_RESPONSE = WRITE_RESPONSE + "\n";
-    private static final String SCHEMA_ALLOWED_RESPONSE = "1\n";
+    // Package-private exposure of the stateless response bodies so unit tests can
+    // assert the exact contract without spinning up an HttpServer. These constants
+    // are referenced once on the request path inside this class; tests use them
+    // read-only.
+    static final String PING_RESPONSE = WRITE_RESPONSE + "\n";
+    static final String SCHEMA_ALLOWED_RESPONSE = "1\n";
+    static final String IDENTIFIER_QUOTE_RESPONSE = NamedDataSource.DEFAULT_QUOTE_IDENTIFIER;
+    static final String DEFAULT_ERROR_BODY = "Internal server error";
+    static final int DEFAULT_ERROR_STATUS = 500;
 
     private final List<Extension<?>> extensions;
 
@@ -330,12 +337,46 @@ public class JdbcBridgeVerticle extends AbstractVerticle implements ExtensionMan
 
         if (failure != null) {
             log.error("Failed to respond (status {}): {}", statusCode, failure.getMessage(), failure);
-            String message = failure.getMessage();
-            ctx.response().setStatusCode(statusCode > 0 ? statusCode : 500)
-                .end(message != null ? message : "Internal server error");
         } else {
             log.error("Failed to respond (status {}) with no exception", statusCode);
-            ctx.response().setStatusCode(statusCode > 0 ? statusCode : 500).end("Internal server error");
+        }
+
+        ErrorResponse resolved = resolveErrorResponse(failure, statusCode);
+        ctx.response().setStatusCode(resolved.status).end(resolved.body);
+    }
+
+    /**
+     * Pure-logic core of {@link #errorHandler(RoutingContext)}: maps an
+     * optional failure plus the current status code to the response we should
+     * send. Extracted as a package-private seam so the contract can be unit
+     * tested without standing up an HTTP server.
+     *
+     * <p>Contract:
+     * <ul>
+     *   <li>status &lt;= 0 is replaced with {@value #DEFAULT_ERROR_STATUS}</li>
+     *   <li>a non-null failure with a non-null message uses that message as the
+     *       body; otherwise the body falls back to {@value #DEFAULT_ERROR_BODY}</li>
+     * </ul>
+     */
+    static ErrorResponse resolveErrorResponse(Throwable failure, int statusCode) {
+        int status = statusCode > 0 ? statusCode : DEFAULT_ERROR_STATUS;
+        String body;
+        if (failure != null && failure.getMessage() != null) {
+            body = failure.getMessage();
+        } else {
+            body = DEFAULT_ERROR_BODY;
+        }
+        return new ErrorResponse(status, body);
+    }
+
+    /** Small package-private value object so the seam stays allocation-cheap and trivially testable. */
+    static final class ErrorResponse {
+        final int status;
+        final String body;
+
+        ErrorResponse(int status, String body) {
+            this.status = status;
+            this.body = body;
         }
     }
 
@@ -470,7 +511,7 @@ public class JdbcBridgeVerticle extends AbstractVerticle implements ExtensionMan
 
     private void handleIdentifierQuote(RoutingContext ctx) {
         // don't want to repeat datasource lookup here
-        ctx.response().end(ByteBuffer.asBuffer(NamedDataSource.DEFAULT_QUOTE_IDENTIFIER));
+        ctx.response().end(ByteBuffer.asBuffer(IDENTIFIER_QUOTE_RESPONSE));
     }
 
     private void handleQuery(RoutingContext ctx) {
