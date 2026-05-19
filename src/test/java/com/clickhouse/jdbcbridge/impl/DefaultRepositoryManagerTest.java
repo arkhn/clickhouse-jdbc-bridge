@@ -177,4 +177,55 @@ public class DefaultRepositoryManagerTest {
         assertSame(m.getRepository(NamedDataSource.class), ds);
         assertSame(m.getRepository(NamedSchema.class), sch);
     }
+
+    /**
+     * Second test double — DIFFERENT concrete class than {@link FakeRepo}
+     * so the replace-in-place branch fires. The replace branch needs
+     * {@code current.getClass() != repo.getClass()} AND
+     * {@code current.getEntityClass() != repo.getEntityClass()}.
+     */
+    private static final class OtherFakeRepo<T extends ManagedEntity> implements Repository<T> {
+        private final Class<T> clazz;
+
+        OtherFakeRepo(Class<T> clazz) { this.clazz = clazz; }
+
+        @Override public Class<T> getEntityClass() { return clazz; }
+        @Override public boolean accept(Class<?> c) { return clazz.equals(c); }
+        @Override public String resolve(String name) { return name; }
+        @Override public List<UsageStats> getUsageStats() { return Collections.emptyList(); }
+        @Override public void registerType(String type, Extension<T> ext) { }
+        @Override public void put(String id, T entity) { }
+        @Override public T get(String id) { return null; }
+    }
+
+    @Test(groups = { "unit" })
+    public void update_replaceBranch_swapsInPlaceWhenClassAndEntityDiffer() {
+        // The update() inner loop has a replace-in-place branch: if the
+        // incoming repo's CLASS differs from the existing repo's class AND
+        // its entityClass differs, the existing entry is overwritten at
+        // its index (rather than appended). Pin the current behavior so a
+        // future intentional change to this odd swap rule shows up here.
+        //
+        // Setup: register FakeRepo<NamedDataSource>. Then update with
+        // OtherFakeRepo<NamedSchema> — both class and entity differ, so
+        // the schema repo *replaces* the datasource repo at index 0.
+        DefaultRepositoryManager m = new DefaultRepositoryManager();
+        FakeRepo<NamedDataSource> first = new FakeRepo<>(NamedDataSource.class);
+        m.update(Collections.singletonList(first));
+
+        OtherFakeRepo<NamedSchema> second = new OtherFakeRepo<>(NamedSchema.class);
+        m.update(Collections.singletonList(second));
+
+        // After the swap: NamedSchema resolves (via second), but
+        // NamedDataSource no longer does — first was kicked out.
+        assertSame(m.getRepository(NamedSchema.class), second);
+
+        try {
+            m.getRepository(NamedDataSource.class);
+            org.testng.Assert.fail(
+                    "datasource repo should have been replaced by schema repo (swap branch)");
+        } catch (IllegalArgumentException expected) {
+            // expected — the original repo was swapped out at index 0.
+        }
+    }
 }
