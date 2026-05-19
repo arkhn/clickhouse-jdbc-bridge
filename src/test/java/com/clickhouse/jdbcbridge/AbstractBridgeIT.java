@@ -517,11 +517,24 @@ public abstract class AbstractBridgeIT {
         // handleColumnsInfo catches and calls ctx.fail(e), which routes
         // through the failureHandler chain to errorHandler.
         //
-        // Pin the observable contract: status is 500 (the failure
-        // doesn't carry an explicit status -> resolveErrorResponse
-        // falls back to DEFAULT_ERROR_STATUS=500) and the body carries
-        // a non-empty error message naming the missing entity.
-        ResponseAndBody r = rawPostColumnsInfo("does-not-exist", smokeQuery());
+        // Same retry pattern as testBridgeQueryReturnsBytes — the cold-
+        // first-call flake on MsSqlIT can hit the error path too (CI run
+        // 26082649080 caught it).
+        ResponseAndBody r = null;
+        try {
+            r = rawPostColumnsInfo("does-not-exist", smokeQuery());
+        } catch (Exception first) {
+            log.warn("[{}] First error-path call failed ({}); retrying once",
+                    getDatasourceName(), first.toString());
+            Thread.sleep(1000);
+            r = rawPostColumnsInfo("does-not-exist", smokeQuery());
+        }
+        if (r == null || r.body == null || r.body.isEmpty()) {
+            log.warn("[{}] First error-path call returned empty body; retrying once",
+                    getDatasourceName());
+            Thread.sleep(1000);
+            r = rawPostColumnsInfo("does-not-exist", smokeQuery());
+        }
 
         assertEquals(r.status, 500,
                 "unknown bare-name datasource must surface as 500; body=" + r.body);
