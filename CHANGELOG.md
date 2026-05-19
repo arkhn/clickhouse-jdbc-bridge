@@ -1,3 +1,12 @@
+## [1.1.0-rc.10](https://github.com/arkhn/clickhouse-jdbc-bridge/compare/v1.1.0-rc.9...v1.1.0-rc.10) (2026-05-19)
+
+### Bug Fixes
+
+* **it:** extend testBridgeQueryReturnsBytes retry to empty-body case ([e74228c](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/e74228ca60ea4233db5f8de2223ab5b8c151dddc))
+* **it:** retry-once on cold-call flake for /ping, /identifier_quote, /schema_allowed ([bd13794](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/bd137947cf628e6266ce98a6aed7caad604c2c90))
+* **it:** retry-once on cold-call flake in error-path columns_info test ([82c2ac3](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/82c2ac32af216d2e1e455c00fdc43517da30fa75))
+* **verticle:** unknown datasource returns 404, not 500 ([72aef01](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/72aef011bf9ac07df5982aef98cb8f60c9c96470))
+
 ## [1.1.0-rc.9](https://github.com/arkhn/clickhouse-jdbc-bridge/compare/v1.1.0-rc.8...v1.1.0-rc.9) (2026-05-18)
 
 ### Bug Fixes
