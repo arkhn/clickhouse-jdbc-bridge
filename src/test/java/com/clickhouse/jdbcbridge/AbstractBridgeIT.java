@@ -460,6 +460,54 @@ public abstract class AbstractBridgeIT {
     }
 
     @Test(groups = { "sit" })
+    public void testBridgeIdentifierQuote() throws Exception {
+        // Exercises handleIdentifierQuote — ClickHouse polls this to
+        // discover the JDBC identifier-quote character (a backtick for
+        // every bridge-backed datasource today).
+        HttpClient client = vertx.createHttpClient();
+        CompletableFuture<HttpClientResponse> respFuture = new CompletableFuture<>();
+        client.request(HttpMethod.POST, bridgePort, "localhost", "/identifier_quote")
+                .onSuccess(req -> {
+                    req.putHeader("Content-Type", "application/x-www-form-urlencoded")
+                            .send("")
+                            .onSuccess(respFuture::complete)
+                            .onFailure(respFuture::completeExceptionally);
+                })
+                .onFailure(respFuture::completeExceptionally);
+        HttpClientResponse resp = respFuture.get(HTTP_RESPONSE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        CompletableFuture<String> bodyFuture = new CompletableFuture<>();
+        resp.body().onSuccess(b -> bodyFuture.complete(b.toString()))
+                .onFailure(bodyFuture::completeExceptionally);
+        String body = bodyFuture.get(HTTP_BODY_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+        assertEquals(resp.statusCode(), 200,
+                "/identifier_quote must return 200; body=" + body);
+        assertNotNull(body);
+        assertTrue(body.contains("`"),
+                "/identifier_quote must return the backtick character; got: " + body);
+    }
+
+    @Test(groups = { "sit" })
+    public void testBridgeSchemaAllowed() throws Exception {
+        // Exercises handleSchemaAllowed — ClickHouse polls this to
+        // discover whether the bridge accepts schema-qualified table
+        // references. The bridge always says "yes" ("1\n").
+        HttpClient client = vertx.createHttpClient();
+        CompletableFuture<String> bodyFuture = new CompletableFuture<>();
+        client.request(HttpMethod.GET, bridgePort, "localhost", "/schema_allowed")
+                .onSuccess(req -> req.send()
+                        .onSuccess(resp -> resp.body()
+                                .onSuccess(b -> bodyFuture.complete(b.toString()))
+                                .onFailure(bodyFuture::completeExceptionally))
+                        .onFailure(bodyFuture::completeExceptionally))
+                .onFailure(bodyFuture::completeExceptionally);
+        String body = bodyFuture.get(HTTP_BODY_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+        assertEquals(body, "1\n",
+                "/schema_allowed must return the literal \"1\\n\"; got: " + body);
+    }
+
+    @Test(groups = { "sit" })
     public void testBridgeColumnsInfoUnknownDatasourceHitsErrorHandler() throws Exception {
         // Exercises the JdbcBridgeVerticle.errorHandler route — the
         // verticle's failureHandler that catches ctx.fail() calls. The
