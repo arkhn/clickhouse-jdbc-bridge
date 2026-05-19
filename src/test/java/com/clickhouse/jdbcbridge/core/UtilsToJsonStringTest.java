@@ -26,24 +26,14 @@ import java.util.Vector;
 import org.testng.annotations.Test;
 
 /**
- * Tests for the {@link Utils#toJsonString} branches not pinned by
- * the existing UtilsTest: char[]/Character[] quoting, multi-element
- * Enumeration, multi-key Map, and the JSON-string escape branch for
- * any other Object.
- *
- * <p>These cover the appendJsonString switch arms that were missed
- * by the existing happy paths — the bridge serializes JDBC values
- * through this code on the read path, so escape correctness matters
- * for char/Character columns and for nested results.</p>
+ * Tests for {@link Utils#toJsonString} branches: char[]/Character[] quoting,
+ * Enumeration, Map, and JSON-string escape.
  */
 public class UtilsToJsonStringTest {
 
-    // ---------- char[] ----------
-
     @Test(groups = { "unit" })
     public void charArray_quotesEachCharacter() {
-        // char[] is serialized as a JSON array of quoted single chars
-        // (not as a single string).
+        // char[] -> JSON array of quoted single chars (not single string).
         assertEquals(Utils.toJsonString(new char[] { 'a', 'b', 'c' }),
                 "[\"a\",\"b\",\"c\"]");
     }
@@ -55,17 +45,13 @@ public class UtilsToJsonStringTest {
 
     @Test(groups = { "unit" })
     public void charArray_specialChar_isJsonEscaped() {
-        // \ and " in chars round-trip through JsonStringEncoder.
+        // \ and " round-trip through JsonStringEncoder.
         String json = Utils.toJsonString(new char[] { '"', '\\' });
-        // The encoder backslash-escapes both — at minimum the output
-        // must not contain unescaped " mid-element or unescaped \.
         assertTrue(json.startsWith("[\"") && json.endsWith("\"]"),
                 "char[] json must be bracket-quoted: " + json);
         assertTrue(json.contains("\\\""), "double-quote must be JSON-escaped: " + json);
         assertTrue(json.contains("\\\\"), "backslash must be JSON-escaped: " + json);
     }
-
-    // ---------- Character[] ----------
 
     @Test(groups = { "unit" })
     public void characterArray_quotesEachCharacter() {
@@ -75,32 +61,21 @@ public class UtilsToJsonStringTest {
 
     @Test(groups = { "unit" })
     public void characterArray_nullElement_rendersAsQuotedNullToken() {
-        // Per appendJsonString: when a Character[] element is null,
-        // it appends the NULL_STRING token inside the surrounding quotes.
-        // This produces "null" (with quotes) — a quirk the test pins.
+        // Quirk: null Character[] element appends NULL_STRING inside surrounding quotes -> "null".
         String json = Utils.toJsonString(new Character[] { 'a', null, 'b' });
 
-        // Element ordering and the null token shape are pinned exactly.
         assertEquals(json, "[\"a\",\"null\",\"b\"]");
     }
 
-    // ---------- Enumeration with multiple elements ----------
-
     @Test(groups = { "unit" })
     public void enumeration_multiElement_isCommaSeparated() {
-        // The Enumeration branch's loop body (the comma after the first
-        // element) is exercised only when there are >=2 elements.
         Vector<Integer> v = new Vector<>(Arrays.asList(1, 2, 3));
 
         assertEquals(Utils.toJsonString(v.elements()), "[1,2,3]");
     }
 
-    // ---------- Iterable (List) with mixed-type elements ----------
-
     @Test(groups = { "unit" })
     public void iterable_listWithStrings_quotesEach() {
-        // List<String> -> Iterable branch. Each element runs through
-        // appendJsonString recursively, hitting the default String case.
         String json = Utils.toJsonString(Arrays.asList("a", "b"));
 
         assertEquals(json, "[\"a\",\"b\"]");
@@ -108,20 +83,15 @@ public class UtilsToJsonStringTest {
 
     @Test(groups = { "unit" })
     public void iterable_listWithNull_rendersBareNull() {
-        // Iterable elements pass through appendJsonString which handles
-        // the null branch directly (NULL_STRING) — NOT through the
-        // null-as-quoted-string branch of Character[].
+        // Iterable null -> bare null (NOT quoted, distinct from Character[] null).
         String json = Utils.toJsonString(Arrays.asList("a", null, "b"));
 
         assertEquals(json, "[\"a\",null,\"b\"]");
     }
 
-    // ---------- Map ----------
-
     @Test(groups = { "unit" })
     public void map_multiKey_isJsonObject() {
-        // Map<String,Integer> -> JSON object with quoted keys. Use
-        // LinkedHashMap to pin insertion order.
+        // LinkedHashMap pins insertion order.
         java.util.LinkedHashMap<String, Integer> m = new java.util.LinkedHashMap<>();
         m.put("a", 1);
         m.put("b", 2);
@@ -141,11 +111,8 @@ public class UtilsToJsonStringTest {
         assertEquals(Utils.toJsonString(m), "{\"k\":\"a\\\"b\"}");
     }
 
-    // ---------- Default branch (String / generic Object) ----------
-
     @Test(groups = { "unit" })
     public void plainString_isQuotedAndEscaped() {
-        // The else-branch at the bottom of appendJsonString.
         assertEquals(Utils.toJsonString("hello"), "\"hello\"");
         assertEquals(Utils.toJsonString("with\"quote"), "\"with\\\"quote\"");
         assertEquals(Utils.toJsonString("with\\slash"), "\"with\\\\slash\"");

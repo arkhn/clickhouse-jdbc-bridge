@@ -44,16 +44,8 @@ import com.clickhouse.jdbcbridge.core.TableDefinition;
 import io.vertx.core.json.JsonObject;
 
 /**
- * Tests for {@link JdbcDataSource}'s adhoc path and error-message
- * formatting. The "adhoc" path (id starts with "jdbc" + config is null)
- * skips Hikari pool init and acquires connections directly via
- * DriverManager; it's what {@code JdbcBridgeVerticle.getDataSource}
- * constructs when the adhoc policy allows fallthrough.
- *
- * <p>buildErrorMessage is package-private — we exercise it indirectly
- * through writeMutationResult against a bad SQL statement, since the
- * wrap is {@code DataAccessException(getId(), buildErrorMessage(e), e)}.
- * </p>
+ * Tests for {@link JdbcDataSource} adhoc path (jdbc-prefixed id + null config)
+ * and error-message formatting via buildErrorMessage.
  */
 public class JdbcDataSourceAdhocTest {
 
@@ -62,10 +54,7 @@ public class JdbcDataSourceAdhocTest {
     @BeforeMethod(groups = { "unit" })
     public void setUp() throws Exception {
         ensureH2Driver();
-        // The adhoc-ds path in JdbcDataSource hands DriverManager an
-        // empty Properties bag — no user/password — so the URL itself
-        // must carry credentials. We embed sa with empty password via
-        // H2's ;USER=...;PASSWORD=... query syntax.
+        // Adhoc path passes DriverManager an empty Properties — URL must carry credentials.
         h2Url = "jdbc:h2:mem:adhoc-" + UUID.randomUUID().toString().replace("-", "")
                 + ";DB_CLOSE_DELAY=-1;MODE=PostgreSQL;USER=sa;PASSWORD=";
         try (Connection conn = DriverManager.getConnection(h2Url);
@@ -102,29 +91,18 @@ public class JdbcDataSourceAdhocTest {
         return new JsonFileRepository<>(NamedDataSource.class);
     }
 
-    // ---------- adhoc construction (no Hikari) ----------
-
     @Test(groups = { "unit" })
     public void adhocCtor_idStartingWithJdbcAndNullConfig_skipsHikariInit() {
-        // The adhoc branch in the JdbcDataSource constructor is the one
-        // that handles "jdbc:..." URIs handed in by callers when the
-        // adhoc policy allows it. The DataSource field is null, so
-        // getConnection() goes through findDriver()+connect() directly
-        // rather than through a per-ds Hikari pool.
+        // Adhoc: DataSource field is null, getConnection goes through findDriver+connect directly.
         JdbcDataSource ds = new JdbcDataSource(h2Url, repo(), null);
 
         assertEquals(ds.getId(), h2Url);
-        // No pool means getPoolUsage() falls back to the base class's
-        // EMPTY_USAGE sentinel.
         assertEquals(ds.getPoolUsage(), "{}");
-        // Close is a no-op for an adhoc ds (nothing to release).
         ds.close();
     }
 
     @Test(groups = { "unit" })
     public void adhocCtor_actuallyServicesQueries() throws Exception {
-        // Round-trip a SELECT through the adhoc path to confirm
-        // getConnection() can find the driver and run a statement.
         JdbcDataSource ds = new JdbcDataSource(h2Url, repo(), null);
         try {
             TableDefinition cols = new TableDefinition(
@@ -143,16 +121,10 @@ public class JdbcDataSourceAdhocTest {
         }
     }
 
-    // ---------- buildErrorMessage (covered via writeMutationResult wrap) ----------
-
     @Test(groups = { "unit" })
     public void mutationError_propagatesSqlStateAndVendorCodeIntoMessage() {
-        // buildErrorMessage formats SQLException as
-        // "SQLState(...) VendorCode(...) <message>".  We can't call it
-        // directly (package-private) but writeMutationResult wraps the
-        // SQLException in DataAccessException with that very message.
-        // H2 raises SQLException with state=42S02 (table not found) for
-        // a DELETE against a missing table.
+        // buildErrorMessage formats as "SQLState(...) VendorCode(...) <message>".
+        // Exercised indirectly: writeMutationResult wraps SQLException in DataAccessException.
         JdbcDataSource ds = new JdbcDataSource("adhoc-err", repo(),
                 new JsonObject()
                         .put("driverClassName", "org.h2.Driver")
@@ -173,9 +145,7 @@ public class JdbcDataSourceAdhocTest {
                 fail("expected DataAccessException for missing table");
             } catch (DataAccessException e) {
                 String msg = e.getMessage();
-                // The wrap baked in by buildErrorMessage: SQLState + VendorCode
-                // prefixes. We don't pin the exact H2 codes (they may change
-                // between H2 versions); just that the formatting got applied.
+                // Don't pin exact H2 codes (may change between versions); just verify formatting.
                 assertTrue(msg.contains("SQLState"),
                         "DAE message must include SQLState prefix from buildErrorMessage: " + msg);
                 assertTrue(msg.contains("VendorCode"),
@@ -186,13 +156,9 @@ public class JdbcDataSourceAdhocTest {
         }
     }
 
-    // ---------- getConnection skip-Hikari path: setAutoCommit + clientInfo failure-tolerant ----------
-
     @Test(groups = { "unit" })
     public void adhocCtor_handlesDriverThatAcceptsAutoCommitTrue() throws Exception {
-        // The adhoc path calls conn.setAutoCommit(true) wrapped in a
-        // try/catch — pinning that we never throw out of getConnection
-        // when the driver supports auto-commit (the common case).
+        // Adhoc path calls conn.setAutoCommit(true) in try/catch — pin it never throws.
         JdbcDataSource ds = new JdbcDataSource(h2Url, repo(), null);
         try {
             TableDefinition cols = new TableDefinition(

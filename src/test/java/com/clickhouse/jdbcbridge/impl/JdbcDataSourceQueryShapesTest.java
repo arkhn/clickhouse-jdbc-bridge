@@ -44,12 +44,9 @@ import com.clickhouse.jdbcbridge.core.Utils;
 import io.vertx.core.json.JsonObject;
 
 /**
- * Tests for {@link JdbcDataSource}'s remaining writeQueryResult shape
- * branches: the DEFAULT_RESULT_COLUMNS short-circuit (when the caller
- * passes the singleton schema, the bridge swaps in the actual ResultSet
- * metadata), the scrollable-cursor branch (driven by
- * QueryParameters.position != 0), max_rows plumbing, and the adhoc
- * unknown-driver error path.
+ * Tests for {@link JdbcDataSource} writeQueryResult shape branches:
+ * DEFAULT_RESULT_COLUMNS short-circuit, scrollable cursor, max_rows,
+ * adhoc unknown-driver error.
  */
 public class JdbcDataSourceQueryShapesTest {
 
@@ -117,19 +114,11 @@ public class JdbcDataSourceQueryShapesTest {
         }
     }
 
-    // ---------- DEFAULT_RESULT_COLUMNS short-circuit ----------
-
     @Test(groups = { "unit" })
     public void writeQueryResult_defaultResultColumns_substitutesResultMetadata() {
-        // When the caller passes the DEFAULT_RESULT_COLUMNS sentinel (a
-        // single-column TableDefinition named Utils.DEFAULT_COLUMN_NAME),
-        // writeQueryResult MUST swap in the actual result-set metadata so
-        // all real columns get streamed. Without this branch the bridge
-        // would only emit the placeholder column. Triggered when ClickHouse
-        // sends a query with no explicit columns header.
+        // Without this branch, queries with no explicit columns header would only emit the placeholder.
         JdbcDataSource ds = new JdbcDataSource("h2-default-cols", repo(), baseConfig());
         try {
-            // Sanity-pin the sentinel shape that writeQueryResult checks for.
             assertTrue(TableDefinition.DEFAULT_RESULT_COLUMNS.size() == 1);
             assertTrue(Utils.DEFAULT_COLUMN_NAME.equals(
                     TableDefinition.DEFAULT_RESULT_COLUMNS.getColumn(0).getName()));
@@ -141,9 +130,7 @@ public class JdbcDataSourceQueryShapesTest {
                     TableDefinition.DEFAULT_RESULT_COLUMNS,
                     new QueryParameters(), w);
 
-            // 5 rows × 2 columns -> non-trivial bytes. Pinning > 5*4 (=20)
-            // is enough to prove the substitution streamed both columns
-            // and not just the placeholder.
+            // 5 rows × 2 cols > 20 bytes proves both columns streamed (not just placeholder).
             assertTrue(w.bytes > 5 * 4,
                     "DEFAULT_RESULT_COLUMNS substitution must emit both id + label; got " + w.bytes);
         } finally {
@@ -151,13 +138,9 @@ public class JdbcDataSourceQueryShapesTest {
         }
     }
 
-    // ---------- scrollable cursor ----------
-
     @Test(groups = { "unit" })
     public void writeQueryResult_positionMode_scrollsToAbsoluteRow() {
-        // QueryParameters.position > 0 routes createStatement through
-        // ResultSet.TYPE_SCROLL_INSENSITIVE so skipRows can do absolute().
-        // Without scroll support, JDBC throws. Pin that the path works.
+        // position > 0 -> TYPE_SCROLL_INSENSITIVE so skipRows.absolute() works.
         JdbcDataSource ds = new JdbcDataSource("h2-scroll", repo(), baseConfig());
         try {
             ColumnDefinition idCol = new ColumnDefinition("ID", DataType.Int32, false,
@@ -178,8 +161,6 @@ public class JdbcDataSourceQueryShapesTest {
             ds.close();
         }
     }
-
-    // ---------- max_rows ----------
 
     @Test(groups = { "unit" })
     public void writeQueryResult_maxRowsCapsStream() {
@@ -209,14 +190,9 @@ public class JdbcDataSourceQueryShapesTest {
         }
     }
 
-    // ---------- adhoc with no driver match ----------
-
     @Test(groups = { "unit" })
     public void adhoc_unknownJdbcUrlThrowsRuntimeException() {
-        // Adhoc construction with a URL that no ServiceLoader-discovered
-        // Driver claims. findDriver throws IllegalStateException — bubbles
-        // out of getConnection / executeQuery. Pin that the failure mode
-        // is a RuntimeException (caller catches generically).
+        // findDriver throws ISE -> bubbles out of getConnection. Caller catches generically.
         JdbcDataSource ds = new JdbcDataSource("jdbc:nope-does-not-exist://wat",
                 repo(), null);
         try {
@@ -233,13 +209,9 @@ public class JdbcDataSourceQueryShapesTest {
         }
     }
 
-    // ---------- getQuoteIdentifier ----------
-
     @Test(groups = { "unit" })
     public void getQuoteIdentifier_returnsNonEmptyString() {
-        // The cached identifier-quote getter falls back to the default
-        // backtick when uncached; with H2 connected it reflects the JDBC
-        // metadata. Just pin non-empty.
+        // Cached getter falls back to backtick when uncached; with H2 reflects JDBC metadata.
         JdbcDataSource ds = new JdbcDataSource("h2-quote", repo(), baseConfig());
         try {
             ds.getResultColumns("", "SELECT 1", new QueryParameters());

@@ -32,17 +32,13 @@ public class NamedSchemaTest {
         return new NamedDataSourceTest.TestRepository<>(NamedSchema.class);
     }
 
-    /** A 1-column array, the minimum that TableDefinition.fromJson accepts. */
     private static JsonArray oneColumn() {
         return new JsonArray().add(new JsonObject().put("name", "a").put("type", "Int32"));
     }
 
     @Test(groups = { "unit" })
     public void emptyColumnsArrayIsRejected() {
-        // TableDefinition.fromJson(null) and (empty array) both lead to
-        // `IllegalArgumentException("At least one column is needed.")`, which is
-        // the only way a NamedSchema validates: the schema contract requires at
-        // least one column.
+        // Schema contract: at least one column required.
         assertThrows(IllegalArgumentException.class,
                 () -> new NamedSchema("s1", stubRepo(), new JsonObject()));
         assertThrows(IllegalArgumentException.class,
@@ -86,9 +82,7 @@ public class NamedSchemaTest {
 
     @Test(groups = { "unit" })
     public void newInstanceRequiresIdAndRepo() {
-        // < 2 args -> IAE
         assertThrows(IllegalArgumentException.class, () -> NamedSchema.newInstance("only-id"));
-        // 0 args -> NPE via Objects.requireNonNull
         assertThrows(NullPointerException.class, () -> NamedSchema.newInstance((Object[]) null));
     }
 
@@ -104,8 +98,6 @@ public class NamedSchemaTest {
 
     @Test(groups = { "unit" })
     public void nullConfigIsRejected() {
-        // NamedSchema requires a non-null config (passes it to TableDefinition.fromJson
-        // via Objects.requireNonNull(config) up the chain).
         assertThrows(NullPointerException.class,
                 () -> new NamedSchema("s6", stubRepo(), null));
     }

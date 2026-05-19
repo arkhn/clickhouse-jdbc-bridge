@@ -25,30 +25,23 @@ import java.math.BigInteger;
 import org.testng.annotations.Test;
 
 /**
- * Constructor tests for {@link TypedParameter} — the supported-types
- * guard, the chType auto-derivation matrix, and the null-arg null-checks.
- * Existing TypedParameterTest covers the basic per-type happy paths via
- * merge logic; this file targets the constructor's validation surface.
+ * Constructor tests for {@link TypedParameter} — supported-types guard,
+ * chType auto-derivation matrix, null-arg null-checks.
  */
 public class TypedParameterCtorTest {
 
-    // ---------- supported-type guard ----------
-
     @Test(groups = { "unit" })
     public void ctor_unsupportedType_throwsIAE() {
-        // Only primitives + String + BigInteger + BigDecimal are accepted.
-        // Anything else (here: java.util.Date) trips the guard.
+        // Only primitives + String + BigInteger + BigDecimal accepted.
         assertThrows(IllegalArgumentException.class,
                 () -> new TypedParameter<>(java.util.Date.class, "ts", new java.util.Date()));
-        // java.net.URI: also unsupported.
         assertThrows(IllegalArgumentException.class,
                 () -> new TypedParameter<>(java.net.URI.class, "u", java.net.URI.create("x:y")));
     }
 
     @Test(groups = { "unit" })
     public void ctor_acceptsAllListedTypes() {
-        // Sanity-pin every supported type so a future tightening of the
-        // guard (dropping one) trips this test.
+        // Sanity-pin every supported type.
         new TypedParameter<>(String.class, "s", "");
         new TypedParameter<>(Boolean.class, "b", false);
         new TypedParameter<>(Byte.class, "by", (byte) 0);
@@ -62,22 +55,10 @@ public class TypedParameterCtorTest {
         new TypedParameter<>(BigDecimal.class, "bd", BigDecimal.ZERO);
     }
 
-    // ---------- chType auto-derivation when null ----------
-
     @Test(groups = { "unit" })
     public void ctor_chTypeNull_autoDerivesFromDefaultValue() {
-        // Walk every branch of the chType auto-derivation:
-        // - BigDecimal -> Decimal
-        // - Float -> Float32
-        // - Double -> Float64
-        // - Long -> UInt64
-        // - other Number (Byte/Short/Integer) -> Int32
-        // - fallback (String etc.) -> Str
-        //
-        // The chType field is read by writeValueTo; here we just construct
-        // and trust the test won't throw. There's no public getter for
-        // chType, but TypedParameter#writeValueTo's dispatch matrix is
-        // pinned by TypedParameterMergeTest.
+        // Walk chType auto-derivation: BigDecimal->Decimal, Float->Float32, Double->Float64,
+        // Long->UInt64, other Number->Int32, fallback->Str.
         new TypedParameter<>(BigDecimal.class, "bd", BigDecimal.ONE);
         new TypedParameter<>(Float.class, "f", 1.0f);
         new TypedParameter<>(Double.class, "d", 1.0);
@@ -88,8 +69,6 @@ public class TypedParameterCtorTest {
         new TypedParameter<>(String.class, "s", "x");
     }
 
-    // ---------- null-arg null-checks ----------
-
     @Test(groups = { "unit" })
     public void ctor_nullName_throwsNPE() {
         assertThrows(NullPointerException.class,
@@ -98,8 +77,6 @@ public class TypedParameterCtorTest {
 
     @Test(groups = { "unit" })
     public void ctor_nullDefaultValue_throwsNPE() {
-        // defaultValue is Objects.requireNonNull — drives both the
-        // chType auto-derivation AND becomes the initial value.
         assertThrows(NullPointerException.class,
                 () -> new TypedParameter<>(Integer.class, "n", null));
     }
@@ -110,30 +87,23 @@ public class TypedParameterCtorTest {
                 () -> new TypedParameter<>(null, "n", 0));
     }
 
-    // ---------- value differs from defaultValue ----------
-
     @Test(groups = { "unit" })
     public void ctor_valueDifferentFromDefault_isHonored() {
-        // The 4-arg ctor lets caller pass a different initial value than
-        // the default. defaultValue is fixed at construction; value is
-        // mutable via merge*.
+        // 4-arg ctor: defaultValue fixed at construction; value mutable via merge.
         TypedParameter<Integer> p = new TypedParameter<>(Integer.class, "n", 0, 42);
 
         assertEquals(p.getDefaultValue(), Integer.valueOf(0));
         assertEquals(p.getValue(), Integer.valueOf(42));
     }
 
-    // ---------- defaultValue immutability across merge ----------
-
     @Test(groups = { "unit" })
     public void merge_doesNotMutateDefaultValue() {
+        // merge only touches `value`; pin so a refactor doesn't clobber defaultValue.
         TypedParameter<Integer> p = new TypedParameter<>(Integer.class, "n", 0, 0);
 
         p.merge("99");
 
         assertEquals(p.getValue(), Integer.valueOf(99));
-        // defaultValue stays at its construction value — merge only
-        // touches `value`. Pin so a refactor doesn't accidentally clobber.
         assertEquals(p.getDefaultValue(), Integer.valueOf(0));
     }
 }

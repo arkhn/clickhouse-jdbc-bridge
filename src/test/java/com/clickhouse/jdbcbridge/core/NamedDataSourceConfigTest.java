@@ -31,9 +31,8 @@ import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 
 /**
- * Companion tests for {@link NamedDataSource} — focuses on the config parser
- * branches: timezone/timeouts, sealed semantics, aliases, driver URLs,
- * custom columns, default values, the cache stats getter, and the
+ * Tests for {@link NamedDataSource} config-parser branches: timezone/timeouts,
+ * sealed semantics, aliases, driver URLs, custom columns, defaults, cache stats,
  * UsageStats / lifecycle hooks.
  */
 public class NamedDataSourceConfigTest {
@@ -42,8 +41,6 @@ public class NamedDataSourceConfigTest {
         return new NamedDataSource("ds-test",
                 new NamedDataSourceTest.TestRepository<>(NamedDataSource.class), cfg);
     }
-
-    // ---------- null-config path ----------
 
     @Test(groups = { "unit" })
     public void nullConfig_yieldsConservativeDefaults() {
@@ -59,8 +56,6 @@ public class NamedDataSourceConfigTest {
         assertNotNull(ds.getDefaultValues(),
                 "null-config branch must still construct an empty DefaultValues, not leak null");
     }
-
-    // ---------- config-driven fields ----------
 
     @Test(groups = { "unit" })
     public void timezoneConfigIsParsedAsJavaTimeZone() {
@@ -81,12 +76,9 @@ public class NamedDataSourceConfigTest {
         assertEquals(ds.getWriteTimeout(), 2500);
     }
 
-    // ---------- sealed semantics ----------
-
     @Test(groups = { "unit" })
     public void sealedDataSourceIgnoresCallerTimeouts() {
-        // The sealed datasource must NOT let a caller override its
-        // configured timeouts — this is the security/quota lever.
+        // Security/quota lever: sealed ds must NOT let caller override timeouts.
         NamedDataSource sealed = build(new JsonObject()
                 .put("sealed", true)
                 .put("queryTimeout", 100)
@@ -106,23 +98,20 @@ public class NamedDataSourceConfigTest {
 
         assertEquals(unsealed.getQueryTimeout(5000), 5000);
         assertEquals(unsealed.getWriteTimeout(7000), 7000);
-        // Negative customTimeout falls back to the configured value.
+        // Negative customTimeout falls back to configured value.
         assertEquals(unsealed.getQueryTimeout(-1), 100);
         assertEquals(unsealed.getWriteTimeout(-1), 200);
     }
 
-    // ---------- aliases ----------
-
     @Test(groups = { "unit" })
     public void aliasesParsedAndIdRemoved() {
-        // The constructor removes the datasource's own id from the alias set —
-        // a "self-alias" is a no-op and would mask routing mistakes downstream.
+        // Self-alias is no-op and would mask routing mistakes — removed by constructor.
         NamedDataSource ds = build(new JsonObject()
                 .put("aliases", new JsonArray()
                         .add("ds-test")
                         .add("alias-a")
                         .add("alias-b")
-                        .add(""))); // empty string filtered out
+                        .add("")));
 
         assertFalse(ds.getAliases().contains("ds-test"),
                 "self-id alias must be removed");
@@ -141,8 +130,6 @@ public class NamedDataSourceConfigTest {
                 "non-String alias entries must be silently dropped");
     }
 
-    // ---------- driver URLs ----------
-
     @Test(groups = { "unit" })
     public void driverUrlsParsedAndExposedUnmodifiable() {
         NamedDataSource ds = build(new JsonObject()
@@ -157,14 +144,8 @@ public class NamedDataSourceConfigTest {
     @Test(groups = { "unit" })
     public void noDriverUrls_yieldsNullClassLoaderUnlessCustomLoaderEnabled() {
         NamedDataSource ds = build(new JsonObject());
-        // The codebase guards driverClassLoader behind a USE_CUSTOM_DRIVER_LOADER
-        // flag (default false). The contract callers depend on is: no driverUrls
-        // -> no per-datasource classloader needs to be juggled.
-        // We don't pin the flag value; we just assert getDriverUrls() is empty.
         assertTrue(ds.getDriverUrls().isEmpty());
     }
-
-    // ---------- custom columns ----------
 
     @Test(groups = { "unit" })
     public void customColumnsAreParsedAndExposedUnmodifiable() {
@@ -191,11 +172,8 @@ public class NamedDataSourceConfigTest {
         assertEquals(parsed.getJsonObject(0).getString("name"), "tag");
     }
 
-    // ---------- validate() ----------
-
     @Test(groups = { "unit" })
     public void validateRejectsEmptyId() {
-        // Construct via the factory so validate() runs.
         assertThrows(IllegalArgumentException.class,
                 () -> NamedDataSource.newInstance("",
                         new NamedDataSourceTest.TestRepository<>(NamedDataSource.class),
@@ -210,8 +188,6 @@ public class NamedDataSourceConfigTest {
                 () -> NamedDataSource.newInstance((Object[]) null));
     }
 
-    // ---------- usage / lifecycle ----------
-
     @Test(groups = { "unit" })
     public void getUsageReturnsDataSourceStatsForGivenId() {
         NamedDataSource ds = build(new JsonObject());
@@ -219,27 +195,20 @@ public class NamedDataSourceConfigTest {
         UsageStats stats = ds.getUsage("alias-name");
         assertNotNull(stats);
         assertEquals(stats.getName(), "alias-name");
-        // Stats must point back at this datasource's identity.
         assertEquals(((DataSourceStats) stats).getInstance(), ds.hashCode());
     }
 
     @Test(groups = { "unit" })
     public void closeIsSafeToCallMultipleTimes() {
-        // The base NamedDataSource.close() only logs; subclasses (e.g.
-        // JdbcDataSource) actually release pools. We pin the base contract:
-        // it's idempotent and doesn't throw.
+        // Base NamedDataSource.close() only logs; idempotent contract.
         NamedDataSource ds = build(new JsonObject());
         ds.close();
         ds.close();
     }
 
-    // ---------- newQueryParameters merging ----------
-
     @Test(groups = { "unit" })
     public void newQueryParameters_layersCallerOverDataSourceDefaults() {
-        // Build a ds with a baseline `max_rows=10`. The merge order is:
-        // (fresh) + (datasource defaults) + (caller params). A caller
-        // overriding max_rows must win.
+        // Merge order: fresh + datasource defaults + caller params.
         JsonObject dsParams = new JsonObject().put(QueryParameters.PARAM_MAX_ROWS, 10);
         NamedDataSource ds = build(new JsonObject().put("parameters", dsParams));
 
@@ -261,17 +230,12 @@ public class NamedDataSourceConfigTest {
         assertEquals(merged.getMaxRows(), 10);
     }
 
-    // ---------- saved-query loading ----------
-
     @Test(groups = { "unit" })
     public void loadSavedQueryAsNeeded_loadsContentOfQueryFile() {
         NamedDataSource ds = build(new JsonObject());
 
         String result = ds.loadSavedQueryAsNeeded("src/test/resources/simple.query", new QueryParameters());
 
-        // simple.query contains "select 1 as a,\n    2 as b" — pin enough of
-        // it to detect a regression that would load the wrong file or skip
-        // the load entirely.
         assertTrue(result.contains("select 1 as a"),
                 "expected query file contents to be loaded, got: " + result);
         assertTrue(result.contains("2 as b"), "got: " + result);
@@ -288,25 +252,21 @@ public class NamedDataSourceConfigTest {
 
     @Test(groups = { "unit" })
     public void loadSavedQueryAsNeeded_multilineQueriesAreNeverFileResolved() {
-        // The first guard is `indexOf('\n') == -1` — multi-line strings are
-        // treated as inline SQL even if they look like a `.query` file.
+        // First guard is `indexOf('\n') == -1` — multi-line is always inline SQL.
         NamedDataSource ds = build(new JsonObject());
 
         String multiline = "SELECT 1\nFROM dual";
         assertEquals(ds.loadSavedQueryAsNeeded(multiline, new QueryParameters()), multiline);
     }
 
-    // ---------- cache stats getter ----------
-
     @Test(groups = { "unit" })
     public void getCacheUsage_emitsStructuredJsonObject() {
+        // Fresh cache -> all-zero stats; pin the schema so dropped keys are caught.
         NamedDataSource ds = build(new JsonObject());
 
         String json = ds.getCacheUsage();
         JsonObject parsed = new JsonObject(json);
 
-        // Cache fresh from construction -> all-zero stats. Pin the schema so
-        // a regression that drops one of the keys is caught.
         for (String key : new String[] {
                 "hitCount", "missCount", "loadSuccessCount", "loadFailureCount",
                 "totalLoadTime", "evictionCount", "evictionWeight" }) {
@@ -318,27 +278,20 @@ public class NamedDataSourceConfigTest {
 
     @Test(groups = { "unit" })
     public void getPoolUsage_baseClassReturnsEmptyUsage() {
-        // The base NamedDataSource has no pool; JdbcDataSource overrides this
-        // with real Hikari stats. Tests pin the base contract.
+        // Base ds has no pool; JdbcDataSource overrides with Hikari stats.
+        // EMPTY_USAGE is literal "{}" — downstream parses it, empty string would break.
         NamedDataSource ds = build(new JsonObject());
-        // EMPTY_USAGE is the literal JSON object "{}"; downstream consumers
-        // parse it, so an empty string would be a contract break.
         assertEquals(ds.getPoolUsage(), "{}");
     }
-
-    // ---------- isDifferentFrom ----------
 
     @Test(groups = { "unit" })
     public void isDifferentFromCatchesConfigChanges() {
         JsonObject base = new JsonObject().put("queryTimeout", 100);
         NamedDataSource ds = build(base);
 
-        // Identical content -> same digest -> not different.
         assertFalse(ds.isDifferentFrom(base.copy()));
-        // Any meaningful change -> different.
         assertTrue(ds.isDifferentFrom(new JsonObject().put("queryTimeout", 200)));
-        // Null config falls through to digest-based comparison and counts
-        // as "different" if the current digest is non-empty.
+        // Null config falls through to digest-based comparison and counts as different.
         assertTrue(ds.isDifferentFrom(null));
     }
 }

@@ -42,15 +42,9 @@ import com.clickhouse.jdbcbridge.core.TableDefinition;
 import io.vertx.core.json.JsonObject;
 
 /**
- * Drives {@link JdbcDataSource#executeQuery} through the per-DataType
- * branches of {@link JdbcDataSource.ResultSetReader#read}. The vanilla
- * {@code JdbcDataSourceH2Test} only exercises a few common types (Int32,
- * Str, Decimal, Bool); this file walks the wider matrix — Int8/16/64,
- * Float32/64, Date, DateTime, DateTime64, FixedStr — so a regression in
- * the read switch isn't invisible.
- *
- * <p>The read path is the bridge's hot read-intensive code: every byte
- * streamed back to ClickHouse routes through one of these branches.</p>
+ * Drives {@link JdbcDataSource#executeQuery} through per-DataType branches
+ * of {@link JdbcDataSource.ResultSetReader#read} — Int8/16/64, Float32/64,
+ * Date, DateTime, DateTime64, FixedStr.
  */
 public class JdbcDataSourceReadPathTest {
 
@@ -64,7 +58,7 @@ public class JdbcDataSourceReadPathTest {
         try (Connection conn = DriverManager.getConnection(h2Url, "sa", "");
                 Statement s = conn.createStatement()) {
             s.execute("CREATE TABLE t ("
-                    + "i8 SMALLINT, "         // H2 lacks TINYINT; SMALLINT serves
+                    + "i8 SMALLINT, "
                     + "i16 SMALLINT, "
                     + "i32 INT, "
                     + "i64 BIGINT, "
@@ -123,8 +117,6 @@ public class JdbcDataSourceReadPathTest {
                 .put("maximumPoolSize", 2);
     }
 
-    /** Captures total bytes written so we can assert "the read switch
-     *  actually wrote something" without parsing RowBinary. */
     static final class Capture extends ResponseWriter {
         int writes;
         long bytes;
@@ -174,8 +166,7 @@ public class JdbcDataSourceReadPathTest {
     public void readPath_dateAndDateTimeBranches() {
         JdbcDataSource ds = new JdbcDataSource("h2-dates", repo(), baseConfig());
         try {
-            // Column names must match the SELECT projection's column labels:
-            // bridge does name-based binding in DataTableReader.process.
+            // Column names must match SELECT projection labels — name-based binding.
             TableDefinition cols = new TableDefinition(
                     col("DT", DataType.Date),
                     col("TS", DataType.DateTime),
@@ -218,8 +209,8 @@ public class JdbcDataSourceReadPathTest {
     public void readPath_stringAndFixedStringBranches() {
         JdbcDataSource ds = new JdbcDataSource("h2-strs", repo(), baseConfig());
         try {
+            // FixedStr length=4 matches 'abc' + 1 NUL pad.
             TableDefinition cols = new TableDefinition(
-                    // FixedStr length=4 matches 'abc' + 1 NUL pad
                     col("FIXED", DataType.FixedStr, 4, 0, 0),
                     col("TXT", DataType.Str));
             Capture w = new Capture();
@@ -235,8 +226,7 @@ public class JdbcDataSourceReadPathTest {
 
     @Test(groups = { "unit" })
     public void readPath_unsignedIntegerBranches() {
-        // UInt8/16/32/64 branches go through writeUInt* — exercise them by
-        // requesting the same column data via unsigned column types.
+        // UInt8/16/32/64 -> writeUInt* branches.
         JdbcDataSource ds = new JdbcDataSource("h2-uints", repo(), baseConfig());
         try {
             TableDefinition cols = new TableDefinition(
@@ -258,8 +248,7 @@ public class JdbcDataSourceReadPathTest {
 
     @Test(groups = { "unit" })
     public void readPath_skipRowsHonorsOffset() {
-        // skipRows pulls (offset) rows from the cursor before emitting. With
-        // 3 rows seeded and offset=1, only 2 should be emitted.
+        // 3 rows seeded; offset=1 -> 2 emitted.
         try (Connection conn = DriverManager.getConnection(h2Url, "sa", "");
                 Statement s = conn.createStatement()) {
             s.execute("INSERT INTO t VALUES (2, 2, 2, 2, 2.0, 2.0, 1.0, 1.0, "
@@ -288,8 +277,7 @@ public class JdbcDataSourceReadPathTest {
             assertTrue(allRows.bytes > skipped.bytes,
                     "offset=1 must emit fewer bytes than no-offset (got allRows=" + allRows.bytes
                             + ", skipped=" + skipped.bytes + ")");
-            // 3 rows of Int32 = 3 * 4 = 12 bytes (no leb128 prefix per row);
-            // 2 rows = 8 bytes.
+            // 3 rows of Int32 = 12 bytes; 2 rows = 8 bytes (no leb128 per-row prefix).
             assertEquals(skipped.bytes, allRows.bytes - 4,
                     "offset=1 must drop exactly one Int32 row (4 bytes)");
         } finally {

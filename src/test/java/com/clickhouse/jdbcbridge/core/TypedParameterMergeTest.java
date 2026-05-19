@@ -29,15 +29,9 @@ import org.testng.annotations.Test;
 import io.vertx.core.json.JsonObject;
 
 /**
- * Companion tests for {@link TypedParameter} — exercises the merge
- * variants (TypedParameter / JsonObject / Object / String overloads),
- * the per-DataType writeValueTo branches, toKeyValuePairString and the
- * equals/hashCode contract. Existing {@code TypedParameterTest} covers
- * the basic-typed-merge happy path; this file fills the rest.
+ * Tests for {@link TypedParameter} merge variants and per-DataType writeValueTo branches.
  */
 public class TypedParameterMergeTest {
-
-    // ---------- merge(TypedParameter) ----------
 
     @Test(groups = { "unit" })
     public void mergeFromOtherTypedParameter_overridesCurrentValue() {
@@ -47,7 +41,6 @@ public class TypedParameterMergeTest {
         a.merge(b);
 
         assertEquals(a.getValue(), Integer.valueOf(99));
-        // default value isn't touched
         assertEquals(a.getDefaultValue(), Integer.valueOf(0));
     }
 
@@ -60,17 +53,13 @@ public class TypedParameterMergeTest {
         assertEquals(a.getValue(), Integer.valueOf(7));
     }
 
-    // ---------- merge(JsonObject) — per-type branches ----------
-
     @Test(groups = { "unit" })
     public void mergeJson_routesByDeclaredType_BigDecimal() {
+        // BigDecimal.valueOf may normalize representation — pin numeric value not raw scale.
         TypedParameter<BigDecimal> p = new TypedParameter<>(BigDecimal.class, "amount", BigDecimal.ZERO);
 
         p.merge(new JsonObject().put("amount", 12.5));
 
-        // The BigDecimal branch reads .getDouble + BigDecimal.valueOf — pin the
-        // numeric value rather than the raw scale (BigDecimal.valueOf may
-        // normalize representation).
         assertEquals(p.getValue().compareTo(BigDecimal.valueOf(12.5)), 0);
     }
 
@@ -104,7 +93,7 @@ public class TypedParameterMergeTest {
 
     @Test(groups = { "unit" })
     public void mergeJson_routesByDefaultValue_Integer() {
-        // Falls through to the `defaultValue instanceof Number` branch.
+        // Falls through to `defaultValue instanceof Number` branch.
         TypedParameter<Integer> p = new TypedParameter<>(Integer.class, "x", 0);
         p.merge(new JsonObject().put("x", 42));
         assertEquals(p.getValue(), Integer.valueOf(42));
@@ -134,15 +123,11 @@ public class TypedParameterMergeTest {
 
     @Test(groups = { "unit" })
     public void mergeJson_explicitNameOverride() {
-        // The merge(JsonObject, name) overload lets the caller look up a
-        // different key than the parameter's own name. Used by callers that
-        // want to alias parameter names across config sources.
+        // merge(JsonObject, name) lets caller alias parameter names across config sources.
         TypedParameter<Integer> p = new TypedParameter<>(Integer.class, "actual_name", 0, 0);
         p.merge(new JsonObject().put("alias_name", 42), "alias_name");
         assertEquals(p.getValue(), Integer.valueOf(42));
     }
-
-    // ---------- merge(String) — per-type branches ----------
 
     @Test(groups = { "unit" })
     public void mergeString_BigDecimal() {
@@ -202,8 +187,6 @@ public class TypedParameterMergeTest {
         assertEquals(p.getValue(), Integer.valueOf(5));
     }
 
-    // ---------- merge(Object) ----------
-
     @Test(groups = { "unit" })
     public void mergeObject_routesToStringMerge() {
         TypedParameter<Integer> p = new TypedParameter<>(Integer.class, "x", 0);
@@ -218,18 +201,13 @@ public class TypedParameterMergeTest {
         assertEquals(p.getValue(), Integer.valueOf(9));
     }
 
-    // ---------- writeValueTo — exercises per-DataType switch ----------
-
     private static ByteBuffer fresh() {
         return ByteBuffer.newInstance(64);
     }
 
     @Test(groups = { "unit" })
     public void writeValueTo_int_familiesEmitMatchingBytes() {
-        // Each ChType branch in writeValueTo calls a specific ByteBuffer.writeX.
-        // Touching the major integer / float / string cases pins the routing
-        // table without re-asserting the wire format (that's covered by
-        // ByteBufferRoundTripTest).
+        // Pins ChType routing table; wire format covered by ByteBufferRoundTripTest.
         TypedParameter<Integer> i8 = new TypedParameter<>(Integer.class, DataType.Int8, "i8", 0, 1);
         TypedParameter<Integer> i32 = new TypedParameter<>(Integer.class, DataType.Int32, "i32", 0, 100);
         TypedParameter<Long> i64 = new TypedParameter<>(Long.class, DataType.Int64, "i64", 0L, 1000L);
@@ -272,11 +250,7 @@ public class TypedParameterMergeTest {
 
     @Test(groups = { "unit" })
     public void writeValueTo_dateTime_familyAcceptsEpochMillis() {
-        // The DateTime branch routes to ByteBuffer.writeDateTime(long, TimeZone)
-        // which converts to seconds internally. The DateTime64 branch applies
-        // chType.getScale() and demands the input already match that scale —
-        // not a meaningful default-config path to exercise without rebuilding
-        // a DataType with explicit scale. Stick to DateTime.
+        // DateTime routes to writeDateTime(long, TimeZone). DateTime64 needs explicit scale.
         TypedParameter<Long> dt = new TypedParameter<>(Long.class, DataType.DateTime,
                 "dt", 0L, 1_700_000_000_000L);
 
@@ -302,8 +276,6 @@ public class TypedParameterMergeTest {
         assertTrue(b.length() > 0);
     }
 
-    // ---------- toKeyValuePairString + equals + hashCode ----------
-
     @Test(groups = { "unit" })
     public void toKeyValuePairString_rendersNameEqualsValue() {
         TypedParameter<Integer> p = new TypedParameter<>(Integer.class, "max_rows", 0, 100);
@@ -317,17 +289,13 @@ public class TypedParameterMergeTest {
         assertEquals(a, b);
         assertEquals(a.hashCode(), b.hashCode());
 
-        // Different value
         TypedParameter<Integer> diffValue = new TypedParameter<>(Integer.class, "n", 0, 6);
         assertNotEquals(a, diffValue);
-        // Different name
         TypedParameter<Integer> diffName = new TypedParameter<>(Integer.class, "m", 0, 5);
         assertNotEquals(a, diffName);
-        // Different default
         TypedParameter<Integer> diffDefault = new TypedParameter<>(Integer.class, "n", 1, 5);
         assertNotEquals(a, diffDefault);
 
-        // Cross-class + null comparisons
         assertFalse(a.equals(null));
         assertFalse(a.equals("not-a-param"));
     }

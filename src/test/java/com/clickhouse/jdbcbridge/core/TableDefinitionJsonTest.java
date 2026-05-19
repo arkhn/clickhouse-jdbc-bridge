@@ -36,18 +36,14 @@ import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 
 /**
- * Companion tests for {@link TableDefinition} — focuses on the JSON/string
- * factory methods, the various constructor overloads, the
- * {@code fromObject(...)} dispatcher, the equals/hashCode contract, and the
- * defensive-copy semantics of {@code getColumns()}.
+ * Tests for {@link TableDefinition} JSON/string factory methods, constructor overloads,
+ * fromObject dispatcher, equals/hashCode contract, defensive-copy semantics.
  */
 public class TableDefinitionJsonTest {
 
     private static ColumnDefinition col(String name, DataType type) {
         return new ColumnDefinition(name, type, true, DEFAULT_LENGTH, DEFAULT_PRECISION, DEFAULT_SCALE);
     }
-
-    // ---------- constructors ----------
 
     @Test(groups = { "unit" })
     public void varargsConstructorRejectsEmptyAndNull() {
@@ -65,13 +61,10 @@ public class TableDefinitionJsonTest {
 
     @Test(groups = { "unit" })
     public void copyConstructor_columnsAreDeepCopied() {
+        // Each ColumnDefinition wrapped via copy ctor — callers can mutate orig without leaking.
         ColumnDefinition orig = col("a", DataType.Int32);
         TableDefinition def = new TableDefinition(orig);
 
-        // The constructor wraps each ColumnDefinition through `new
-        // ColumnDefinition(column)` (line 93 of TableDefinition) — i.e. the
-        // table holds an independent copy. Verifying this is the contract
-        // that lets callers mutate `orig` without leaking into the table.
         assertNotSame(def.getColumn(0), orig);
         assertEquals(def.getColumn(0).getName(), orig.getName());
         assertEquals(def.getColumn(0).getType(), orig.getType());
@@ -103,13 +96,9 @@ public class TableDefinitionJsonTest {
         assertEquals(prepended.getColumn(2).getName(), "b");
     }
 
-    // ---------- fromJson(JsonArray) / fromJson(String) ----------
-
     @Test(groups = { "unit" })
     public void fromJson_nullArrayProducesEmptyColumnsAndThusRejected() {
-        // fromJson(JsonArray=null) builds an empty ColumnDefinition[] which
-        // the (int, ColumnDefinition...) ctor rejects. This is a regression
-        // guard for the failure mode behind ITs that pass `null` columns.
+        // Regression guard: fromJson(null) -> empty cols[] -> ctor rejects.
         assertThrows(IllegalArgumentException.class,
                 () -> TableDefinition.fromJson((JsonArray) null));
     }
@@ -155,8 +144,6 @@ public class TableDefinitionJsonTest {
 
     @Test(groups = { "unit" })
     public void fromJson_stringSkipsLeadingWhitespace() {
-        // The character-scan loop on lines 228-242 must walk past whitespace
-        // before deciding which JSON shape it's looking at.
         String json = "   \n\t [{\"name\": \"z\", \"type\": \"Bool\"}]";
 
         TableDefinition def = TableDefinition.fromJson(json);
@@ -166,14 +153,11 @@ public class TableDefinitionJsonTest {
 
     @Test(groups = { "unit" })
     public void fromJson_stringNotJsonFallsBackToColumnDefinitionFromObject() {
-        // A non-JSON input falls through to `ColumnDefinition.fromObject(json)`
-        // which produces a single-column table whose value is the input string.
+        // Non-JSON falls through to ColumnDefinition.fromObject -> single-column table.
         TableDefinition def = TableDefinition.fromJson("just-a-bare-string");
 
         assertEquals(def.size(), 1);
     }
-
-    // ---------- fromObject(...) dispatcher ----------
 
     @Test(groups = { "unit" })
     public void fromObject_nullReturnsDefaultSingletonColumns() {
@@ -197,9 +181,7 @@ public class TableDefinitionJsonTest {
 
     @Test(groups = { "unit" })
     public void fromObject_dispatchesOnPrimitiveArrayTypes() {
-        // The dispatcher has dedicated branches per primitive array type;
-        // we don't pin per-element type mapping (that's ColumnDefinition's
-        // concern), but the column count must equal the array length.
+        // Dispatcher has branch per primitive array type; column count must equal array length.
         assertEquals(TableDefinition.fromObject(new boolean[] { true, false }).size(), 2);
         assertEquals(TableDefinition.fromObject(new byte[] { 1, 2, 3 }).size(), 3);
         assertEquals(TableDefinition.fromObject(new short[] { 1 }).size(), 1);
@@ -235,9 +217,8 @@ public class TableDefinitionJsonTest {
         TableDefinition def = new TableDefinition(col("a", DataType.Int32));
 
         ColumnDefinition[] snapshot = def.getColumns();
-        snapshot[0] = col("hacked", DataType.Str); // mutating the snapshot
+        snapshot[0] = col("hacked", DataType.Str);
 
-        // Internal state must be untouched.
         assertEquals(def.getColumn(0).getName(), "a");
     }
 
@@ -248,8 +229,6 @@ public class TableDefinitionJsonTest {
         assertEquals(def.getVersion(), 2);
         assertTrue(def.hasColumn());
     }
-
-    // ---------- toJsonString ----------
 
     @Test(groups = { "unit" })
     public void toJsonStringIncludesQueryAndColumns() {
@@ -274,8 +253,6 @@ public class TableDefinitionJsonTest {
                 "null query argument must not emit the `query` key");
     }
 
-    // ---------- toString round-trip ----------
-
     @Test(groups = { "unit" })
     public void toStringRoundTripsThroughFromString() {
         TableDefinition def = new TableDefinition(2,
@@ -297,8 +274,6 @@ public class TableDefinitionJsonTest {
         assertSame(TableDefinition.fromString(null), TableDefinition.DEFAULT_RESULT_COLUMNS);
     }
 
-    // ---------- equals / hashCode ----------
-
     @Test(groups = { "unit" })
     public void equalsAndHashCode_consistentWithVersionAndColumns() {
         TableDefinition a = new TableDefinition(1, col("a", DataType.Int32));
@@ -311,7 +286,6 @@ public class TableDefinitionJsonTest {
         assertNotEquals(a, differentVersion);
         assertNotEquals(a, differentColumns);
 
-        // Defensive: null and foreign types are not equal.
         assertFalse(a.equals(null));
         assertFalse(a.equals("not-a-table-definition"));
     }

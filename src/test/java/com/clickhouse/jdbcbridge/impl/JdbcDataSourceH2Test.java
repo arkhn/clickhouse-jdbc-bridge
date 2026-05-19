@@ -44,12 +44,8 @@ import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 
 /**
- * End-to-end tests for {@link JdbcDataSource} using an in-process H2 database.
- * The integration tests under {@code src/test/java/.../jdbcbridge/*IT.java}
- * already exercise this class against five real databases via testcontainers;
- * those runs are slow (each spins a container). These tests cover the same
- * code paths in &lt;1s by talking to an in-memory H2 instance, which lets the
- * JaCoCo aggregate actually see the lines on every PR build.
+ * End-to-end tests for {@link JdbcDataSource} using in-process H2 — fast equivalent
+ * of the testcontainers-based IT suite.
  */
 public class JdbcDataSourceH2Test {
 
@@ -58,13 +54,8 @@ public class JdbcDataSourceH2Test {
 
     @BeforeMethod(groups = { "unit" })
     public void perTestDatabase() throws Exception {
-        // JdbcDataSource's constructor unconditionally calls
-        // deregisterJdbcDriver(driverClassName) before it builds the
-        // HikariConfig, so after the first test in this class our H2 driver
-        // is gone from DriverManager. Class.forName won't re-trigger the
-        // static initializer (the class is already loaded), so we register
-        // an explicit instance each time. This also rides out any other
-        // test class in the suite that tears down DriverManager.
+        // JdbcDataSource constructor calls deregisterJdbcDriver — Class.forName won't
+        // re-trigger static init; register an explicit instance each time.
         boolean registered = false;
         java.util.Enumeration<java.sql.Driver> drivers = DriverManager.getDrivers();
         while (drivers.hasMoreElements()) {
@@ -78,10 +69,7 @@ public class JdbcDataSourceH2Test {
                     (java.sql.Driver) Class.forName("org.h2.Driver").getDeclaredConstructor().newInstance());
         }
 
-        // Unique per-method database so test order can't leak state. Use a
-        // private in-memory DB (no shared registry across DriverManager
-        // sessions) and DB_CLOSE_DELAY=-1 so the schema we seed below survives
-        // the seed connection closing.
+        // Unique per-method DB; DB_CLOSE_DELAY=-1 so schema survives seed connection closing.
         dbName = "jdbcds-" + UUID.randomUUID().toString().replace("-", "");
         jdbcUrl = "jdbc:h2:mem:" + dbName + ";DB_CLOSE_DELAY=-1;MODE=PostgreSQL";
 
@@ -100,8 +88,7 @@ public class JdbcDataSourceH2Test {
 
     @AfterMethod(groups = { "unit" })
     public void tearDownDatabase() throws Exception {
-        // DB_CLOSE_DELAY=-1 keeps the in-memory DB alive until shutdown.
-        // Issue an explicit SHUTDOWN so each test starts with a clean slate.
+        // Explicit SHUTDOWN so each test starts with clean slate.
         try (Connection conn = DriverManager.getConnection(jdbcUrl, "sa", "");
                 Statement s = conn.createStatement()) {
             s.execute("SHUTDOWN");
@@ -124,28 +111,19 @@ public class JdbcDataSourceH2Test {
                 .put("maximumPoolSize", 2);
     }
 
-    // ---------- constructor / pool init ----------
-
     @Test(groups = { "unit" })
     public void constructor_initializesHikariPoolAgainstH2() {
         JdbcDataSource ds = new JdbcDataSource("h2-basic", repo(), baseConfig());
 
         assertEquals(ds.getId(), "h2-basic");
-        // Pool stats getter returns a non-empty JSON object once the pool exists.
         String poolUsage = ds.getPoolUsage();
         assertNotNull(poolUsage);
-        // The base NamedDataSource.EMPTY_USAGE sentinel is "{}"; with a real
-        // pool we expect richer content keyed off Hikari's metrics. We don't
-        // pin the exact JSON shape (Hikari upgrades may rename keys), but it
-        // must not be the empty-pool sentinel.
         ds.close();
     }
 
     @Test(groups = { "unit" })
     public void constructor_translatesLegacyDriverAlias() {
-        // The "driver" key is HikariCP's pre-2.x name for "driverClassName".
-        // The bridge translates it before HikariConfig sees it, so a config
-        // written against an older bridge keeps working.
+        // "driver" is HikariCP pre-2.x name for "driverClassName"; bridge translates it.
         JsonObject legacy = baseConfig();
         legacy.remove("driverClassName");
         legacy.put("driver", "org.h2.Driver");
@@ -166,10 +144,7 @@ public class JdbcDataSourceH2Test {
 
     @Test(groups = { "unit" })
     public void constructor_threadsCustomDataSourcePropertiesThroughHikari() {
-        // Driver-specific options on a `dataSource.*` block must reach the
-        // JDBC driver. H2 silently ignores unknown ones, so we use one that
-        // actually exists (TRACE_LEVEL_SYSTEM_OUT) and verify the ds still
-        // initialises with it set.
+        // `dataSource.*` block must reach driver. Use H2-supported TRACE_LEVEL_SYSTEM_OUT.
         JsonObject cfg = baseConfig().put("dataSource",
                 new JsonObject().put("TRACE_LEVEL_SYSTEM_OUT", "0"));
 
@@ -177,8 +152,6 @@ public class JdbcDataSourceH2Test {
         assertNotNull(ds);
         ds.close();
     }
-
-    // ---------- inferTypes / getResultColumns ----------
 
     @Test(groups = { "unit" })
     public void inferTypes_resolvesColumnsForRealTableQuery() {
@@ -189,15 +162,10 @@ public class JdbcDataSourceH2Test {
 
             assertEquals(cols.size(), 4);
             assertEquals(cols.getColumn(0).getName().toUpperCase(), "ID");
-            // H2's INTEGER maps to Int32. The exact mapping comes from
-            // DefaultDataTypeConverter (covered in its own test file); here
-            // we just confirm the wiring delivers integer/string/decimal/bool
-            // distinctions to ColumnDefinition.
             assertEquals(cols.getColumn(0).getType(), DataType.Int32);
             assertEquals(cols.getColumn(1).getType(), DataType.Str);
             assertEquals(cols.getColumn(2).getType(), DataType.Decimal);
-            // H2 reports BOOLEAN as JDBC BOOLEAN which the converter normalises
-            // to Str (see DefaultDataTypeConverter.BOOLEAN case).
+            // H2 BOOLEAN -> JDBC BOOLEAN -> Str (DefaultDataTypeConverter.BOOLEAN case).
             assertEquals(cols.getColumn(3).getType(), DataType.Str);
         } finally {
             ds.close();
@@ -206,11 +174,9 @@ public class JdbcDataSourceH2Test {
 
     @Test(groups = { "unit" })
     public void inferTypes_acceptsBareTableNameAndQuotesIt() {
-        // The bare-name branch (no whitespace -> wrap in SELECT * FROM "name")
-        // is what callers hit when they just pass the table identifier.
+        // Bare-name branch: no whitespace -> wrap in SELECT * FROM "name".
         JdbcDataSource ds = new JdbcDataSource("h2-table-name", repo(), baseConfig());
         try {
-            // H2 in PostgreSQL mode preserves UPPERCASE for unquoted identifiers.
             TableDefinition cols = ds.getResultColumns("", "WIDGETS", new QueryParameters());
 
             assertEquals(cols.size(), 4);
@@ -221,12 +187,9 @@ public class JdbcDataSourceH2Test {
 
     @Test(groups = { "unit" })
     public void inferTypes_wrapsSqlExceptionAsDataAccessException() {
+        // Syntax error -> DataAccessException; getResultColumns re-wraps as ISE "Failed to infer...".
         JdbcDataSource ds = new JdbcDataSource("h2-bad-sql", repo(), baseConfig());
         try {
-            // Inference goes via columnsCache.get(...) -> inferTypes -> stmt.execute.
-            // A syntax error must surface as DataAccessException with the ds id
-            // baked into the message. Note: getResultColumns wraps it again as
-            // IllegalStateException with "Failed to infer schema from [...]".
             try {
                 ds.getResultColumns("", "NOT VALID SQL AT ALL FROM widgets", new QueryParameters());
                 fail("expected query against a bad SQL string to surface an exception");
@@ -249,9 +212,6 @@ public class JdbcDataSourceH2Test {
             TableDefinition first = ds.getResultColumns("", "SELECT id, name FROM widgets", params);
             TableDefinition second = ds.getResultColumns("", "SELECT id, name FROM widgets", params);
 
-            // Both calls hit the same Caffeine entry; identity equality
-            // proves the cache short-circuit worked. (A regression that
-            // recomputed every time would build two distinct instances.)
             assertSame(second, first, "second call must hit the columnsCache, not re-infer");
         } finally {
             ds.close();
@@ -268,16 +228,12 @@ public class JdbcDataSourceH2Test {
             TableDefinition first = ds.getResultColumns("", "SELECT id FROM widgets", params);
             TableDefinition second = ds.getResultColumns("", "SELECT id FROM widgets", params);
 
-            // Each call re-infers; the cache is bypassed. The two table
-            // definitions are equal-but-distinct.
             assertEquals(second, first);
             assertTrue(second != first, "no_cache=true must skip the columnsCache");
         } finally {
             ds.close();
         }
     }
-
-    // ---------- newInstance factory ----------
 
     @Test(groups = { "unit" })
     public void newInstance_buildsViaFactoryWithValidConfig() {
@@ -292,8 +248,6 @@ public class JdbcDataSourceH2Test {
         assertThrows(IllegalArgumentException.class, () -> JdbcDataSource.newInstance("only-id"));
         assertThrows(NullPointerException.class, () -> JdbcDataSource.newInstance((Object[]) null));
     }
-
-    // ---------- custom columns + aliases plumb through to base class ----------
 
     @Test(groups = { "unit" })
     public void constructor_exposesCustomColumnsConfiguredAtJsonLevel() {
@@ -311,14 +265,6 @@ public class JdbcDataSourceH2Test {
         }
     }
 
-    // ---------- executeQuery -> ResultSetReader.process (the streaming path) ----------
-
-    /**
-     * Captures every {@code write(ByteBuffer)} call so we can prove the streaming
-     * query path actually emitted row data, without standing up a Vert.x HTTP
-     * response. {@link com.clickhouse.jdbcbridge.core.ResponseWriter} exposes a
-     * protected no-arg ctor for exactly this purpose.
-     */
     static final class CapturingResponseWriter extends com.clickhouse.jdbcbridge.core.ResponseWriter {
         int writeCalls;
         long totalBytes;
@@ -346,9 +292,6 @@ public class JdbcDataSourceH2Test {
     public void executeQuery_streamsRowsThroughResultSetReader() {
         JdbcDataSource ds = new JdbcDataSource("h2-execquery", repo(), baseConfig());
         try {
-            // Make a request column list matching the projection so the result
-            // mapping is unambiguous (column-name match, no implicit DEFAULT
-            // routing).
             ColumnDefinition idCol = new ColumnDefinition("ID", DataType.Int32, false,
                     DataType.DEFAULT_LENGTH, DataType.DEFAULT_PRECISION, DataType.DEFAULT_SCALE);
             ColumnDefinition nameCol = new ColumnDefinition("NAME", DataType.Str, false,
@@ -357,17 +300,13 @@ public class JdbcDataSourceH2Test {
 
             CapturingResponseWriter writer = new CapturingResponseWriter();
             ds.executeQuery(
-                    /* schema */ "",
-                    /* originalQuery */ "SELECT id, name FROM widgets ORDER BY id",
-                    /* loadedQuery   */ "SELECT id, name FROM widgets ORDER BY id",
+                    "",
+                    "SELECT id, name FROM widgets ORDER BY id",
+                    "SELECT id, name FROM widgets ORDER BY id",
                     cols,
                     new QueryParameters(),
                     writer);
 
-            // Three rows in widgets => the streaming reader must have driven
-            // at least one write through the response. We don't pin the exact
-            // RowBinary byte sequence (covered by ITs against real ClickHouse),
-            // just that the streaming path actually flowed data.
             assertTrue(writer.writeCalls > 0, "ResultSetReader must emit at least one write call");
             assertTrue(writer.totalBytes > 0, "ResultSetReader must emit non-empty bytes");
         } finally {

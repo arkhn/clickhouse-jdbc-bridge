@@ -36,18 +36,10 @@ import com.clickhouse.jdbcbridge.core.TableDefinition;
 import io.vertx.core.json.JsonObject;
 
 /**
- * Tests for {@link ConfigDataSource}, the bridge's built-in "SHOW
- * DATASOURCES" admin endpoint. Covers the parser, the writeQueryResult
- * route through DataSourceStatReader (currently at 0% on Codecov), and
- * the error path for malformed queries.
- *
- * <p>This is a read-intensive admin path — ClickHouse operators poll
- * this to introspect what the bridge has registered, so a regression
- * here breaks observability tooling.</p>
+ * Tests for {@link ConfigDataSource} — SHOW DATASOURCES admin endpoint.
  */
 public class ConfigDataSourceTest {
 
-    /** Reflection-free way to invoke the package-private parse(). */
     static final class TestableConfigDataSource extends ConfigDataSource {
         TestableConfigDataSource(BaseRepository<NamedDataSource> repo) {
             super(repo);
@@ -64,7 +56,6 @@ public class ConfigDataSourceTest {
         }
     }
 
-    /** Captures every write(buffer) call. */
     static final class Capture extends ResponseWriter {
         int writes;
         long bytes;
@@ -77,7 +68,6 @@ public class ConfigDataSourceTest {
         }
     }
 
-    /** Local stub — NamedDataSourceTest.TestRepository is package-private. */
     static class StubRepository<T extends ManagedEntity> extends BaseRepository<T> {
         StubRepository(Class<T> clazz) { super(clazz); }
         @Override protected void atomicAdd(T entity) {}
@@ -98,8 +88,6 @@ public class ConfigDataSourceTest {
                 DataType.DEFAULT_LENGTH, DataType.DEFAULT_PRECISION, DataType.DEFAULT_SCALE);
     }
 
-    // ---------- parse() ----------
-
     @Test(groups = { "unit" })
     public void parse_acceptsShowDatasources() {
         TestableConfigDataSource cds = new TestableConfigDataSource(repoWithEntries(0));
@@ -111,8 +99,8 @@ public class ConfigDataSourceTest {
 
     @Test(groups = { "unit" })
     public void parse_caseInsensitive() {
+        // Lexer matches via equalsIgnoreCase.
         TestableConfigDataSource cds = new TestableConfigDataSource(repoWithEntries(0));
-        // The lexer matches via String.equalsIgnoreCase — pin that contract.
         ConfigDataSource.ConfigQuery cq = cds.callParse("show datasources");
         assertEquals(cq.configType, "DATASOURCES");
     }
@@ -124,21 +112,15 @@ public class ConfigDataSourceTest {
         assertThrows(IllegalArgumentException.class, () -> cds.callParse(""));
         assertThrows(IllegalArgumentException.class, () -> cds.callParse(null));
         assertThrows(IllegalArgumentException.class, () -> cds.callParse("SHOW TABLES"));
-        assertThrows(IllegalArgumentException.class, () -> cds.callParse("SHOW")); // too few tokens
+        assertThrows(IllegalArgumentException.class, () -> cds.callParse("SHOW"));
     }
-
-    // ---------- writeQueryResult: SHOW DATASOURCES ----------
 
     @Test(groups = { "unit" })
     public void writeQueryResult_emitsOneRowPerRegisteredDatasource() {
-        // Two real ds plus the ConfigDataSource itself (registered under
-        // EMPTY_STRING by initialize()). DataSourceStatReader.nextRow
-        // skips the empty-name entry, so only the 2 real ds yield rows.
+        // DataSourceStatReader.nextRow skips the empty-name entry (the ConfigDataSource itself).
         BaseRepository<NamedDataSource> repo = repoWithEntries(2);
         TestableConfigDataSource cds = new TestableConfigDataSource(repo);
 
-        // Request all the columns the SHOW DATASOURCES schema declares,
-        // matching DATASOURCE_CONFIG_COLUMNS field-for-field by name.
         ColumnDefinition[] requestColumns = new ColumnDefinition[] {
                 col("name", DataType.Str),
                 col("is_alias", DataType.UInt8),
@@ -168,17 +150,11 @@ public class ConfigDataSourceTest {
         Capture w = new Capture();
 
         cds.callWriteQueryResult("SHOW DATASOURCES", requestColumns, w);
-
-        // No rows -> the row loop in DataTableReader.process never enters
-        // the if-batch-boundary flush, but the trailing flush still fires
-        // even with empty buffer. The bytes can be 0 (empty buffer) but
-        // the call must not throw.
+        // No rows -> bytes can be 0 but call must not throw.
     }
 
     @Test(groups = { "unit" })
     public void writeQueryResult_malformedQueryThrows() {
-        // The catch in writeQueryResult re-routes through parse() which
-        // throws IAE for anything that isn't SHOW DATASOURCES.
         TestableConfigDataSource cds = new TestableConfigDataSource(repoWithEntries(0));
         Capture w = new Capture();
 
@@ -195,20 +171,12 @@ public class ConfigDataSourceTest {
         assertEquals(cds.getType(), "config");
     }
 
-    // ---------- TableDefinition.fromObject sanity ----------
-
     @Test(groups = { "unit" })
     public void datasourceConfigColumns_isStable() {
-        // Pin the column order of the DATASOURCE_CONFIG_COLUMNS — operators
-        // build dashboards against this schema and silent reorders would
-        // break consumers. We don't pin the constant directly (it's
-        // package-private) but observe it via a SHOW DATASOURCES end-to-end.
+        // Pins SHOW DATASOURCES column-binding indirectly — operator dashboards depend on the schema.
         BaseRepository<NamedDataSource> repo = repoWithEntries(1);
         TestableConfigDataSource cds = new TestableConfigDataSource(repo);
 
-        // Build TableDefinition from JSON shape and ensure we can read the
-        // expected columns out of the response by name (proves the
-        // metadata->request column binding works).
         ColumnDefinition[] requestColumns = new ColumnDefinition[] {
                 col("name", DataType.Str),
                 col("type", DataType.Str),
@@ -220,27 +188,14 @@ public class ConfigDataSourceTest {
         assertTrue(w.bytes > 0, "expected bytes for the 1 registered ds");
     }
 
-    // ---------- ConfigDataSource initialize() helper ----------
-
     @Test(groups = { "unit" })
     public void initialize_registersSingletonAtEmptyId() {
-        // The ConfigDataSource.initialize() method is the production-side
-        // wiring that sticks a singleton under the EMPTY_STRING id. Cover
-        // it via a minimal ExtensionManager stub.
-        //
-        // We don't have a full ExtensionManager to hand (the verticle
-        // implements it), so we exercise the equivalent flow directly:
-        // construct + register via repo.put. This is the same shape
-        // initialize() produces.
+        // Empty-string key is reserved for the config datasource (production initialize() wiring).
         BaseRepository<NamedDataSource> repo = new StubRepository<>(NamedDataSource.class);
 
         ConfigDataSource singleton = new TestableConfigDataSource(repo);
         repo.put(com.clickhouse.jdbcbridge.core.Utils.EMPTY_STRING, singleton);
 
-        // The empty-string key is reserved for the config datasource.
-        // Calling repo.get("") on a multi-type repo would return... well,
-        // not the entity (it strips ? and looks up). Let's just verify
-        // the singleton's getType() is stable.
         assertEquals(singleton.getType(), "config");
     }
 }

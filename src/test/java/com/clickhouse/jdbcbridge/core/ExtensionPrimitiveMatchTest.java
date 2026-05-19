@@ -27,18 +27,11 @@ import org.testng.annotations.Test;
 
 /**
  * Tests for {@link Extension} branches the existing ExtensionTest skips:
- * the per-primitive type-matcher rows of the constructor lookup,
- * loadClass success + miss paths, the explicit-name constructor, and
- * the constructor-invocation-failure wrap.
- *
- * <p>Extension is the bridge's plugin spine — every JdbcDataSource /
- * NamedSchema / NamedQuery / converter gets instantiated through it.
- * A regression in the type-matcher would silently route the wrong
- * constructor for a Long vs Integer arg.</p>
+ * per-primitive type-matcher rows, loadClass success/miss, explicit-name
+ * constructor, constructor-invocation-failure wrap.
  */
 public class ExtensionPrimitiveMatchTest {
 
-    /** Constructor-rich class so we can probe every primitive matcher. */
     static class PrimitiveCtors {
         final String tag;
 
@@ -52,7 +45,6 @@ public class ExtensionPrimitiveMatchTest {
         public PrimitiveCtors(char c) { tag = "char:" + c; }
     }
 
-    /** Constructor that always throws, to exercise the failure-wrap. */
     static class ThrowingCtor {
         public ThrowingCtor(String why) {
             throw new IllegalStateException("boom: " + why);
@@ -61,19 +53,12 @@ public class ExtensionPrimitiveMatchTest {
 
     static class NoMatchingCtor {
         public NoMatchingCtor(String a, String b) {
-            // Two-arg constructor only; newInstance() called with no args
-            // or wrong count must throw UnsupportedOperationException.
         }
     }
-
-    // ---------- per-primitive matcher rows ----------
 
     @Test(groups = { "unit" })
     public void newInstance_byteMatcherRoutesToByteCtor() {
         Extension<PrimitiveCtors> ext = new Extension<>(PrimitiveCtors.class);
-        // Args must be wrapped in Object[] so newInstance treats them as a
-        // single positional list. Each primitive matcher routes to its
-        // matching ctor — pin the routing table.
         PrimitiveCtors r = ext.newInstance(new Object[] { (byte) 5 });
         assertEquals(r.tag, "byte:5");
     }
@@ -127,8 +112,6 @@ public class ExtensionPrimitiveMatchTest {
         assertEquals(r.tag, "char:X");
     }
 
-    // ---------- failure paths ----------
-
     @Test(groups = { "unit" })
     public void newInstance_throwingCtor_wrapsAsIllegalArgumentException() {
         Extension<ThrowingCtor> ext = new Extension<>(ThrowingCtor.class);
@@ -139,7 +122,6 @@ public class ExtensionPrimitiveMatchTest {
         } catch (IllegalArgumentException e) {
             assertTrue(e.getMessage().contains("Failed to create instance"),
                     "wrap message must include the diagnostic prefix: " + e.getMessage());
-            // The underlying ISE is preserved as the cause.
             assertNotNull(e.getCause());
             assertTrue(e.getCause() instanceof IllegalStateException,
                     "cause must be the original ISE, got: " + e.getCause());
@@ -148,30 +130,22 @@ public class ExtensionPrimitiveMatchTest {
 
     @Test(groups = { "unit" })
     public void newInstance_wrongArgCount_throwsUnsupportedOperationException() {
+        // UOE is the "config calls extension with wrong shape" signal.
         Extension<NoMatchingCtor> ext = new Extension<>(NoMatchingCtor.class);
 
-        // No matching ctor for zero-arg or one-arg invocation. UOE is the
-        // "your config calls an extension with the wrong shape" signal.
         assertThrows(UnsupportedOperationException.class, ext::newInstance);
         assertThrows(UnsupportedOperationException.class,
                 () -> ext.newInstance(new Object[] { "only-one" }));
     }
 
-    // ---------- explicit-name constructor ----------
-
     @Test(groups = { "unit" })
     public void explicitNameCtor_overridesClassSimpleName() {
-        // Default name is class.getSimpleName(); the 2-arg ctor lets a
-        // caller override that. Important for ExtensionManager's type
-        // registry — without this override every config datasource would
-        // be stuck with the auto-derived name.
+        // 2-arg ctor overrides class.getSimpleName() default — needed for ExtensionManager's type registry.
         Extension<PrimitiveCtors> ext = new Extension<>("custom-name", PrimitiveCtors.class);
 
         assertEquals(ext.getName(), "custom-name");
         assertSame(ext.getProviderClass(), PrimitiveCtors.class);
     }
-
-    // ---------- loadClass ----------
 
     @Test(groups = { "unit" })
     public void loadClass_findsKnownClass() {
@@ -185,25 +159,18 @@ public class ExtensionPrimitiveMatchTest {
 
     @Test(groups = { "unit" })
     public void loadClass_unknownClassReturnsNullNotThrows() {
+        // Contract: warn and return null — extensions can probe optional deps without crashing.
         Extension<PrimitiveCtors> ext = new Extension<>(PrimitiveCtors.class);
 
-        // The contract is "warn and return null" — extensions can probe
-        // for optional dependencies without crashing the bridge.
         Class<?> c = ext.loadClass("com.example.DefinitelyDoesNotExist");
 
         assertNull(c, "missing class must yield null, not throw");
     }
 
-    // ---------- initialize() with non-newInstance-bearing class ----------
-
     @Test(groups = { "unit" })
     public void initialize_classWithoutInitializeMethod_isNoOp() {
-        // PrimitiveCtors doesn't declare a static `initialize(ExtensionManager)`
-        // method — Extension's reflection lookup finds nothing and stores
-        // initMethod as null. initialize() then short-circuits without
-        // throwing. (Pinned via ExtensionTest.testExtension flag flip;
-        // here we pin the no-init-method path explicitly.)
+        // No static initialize() method -> initMethod is null -> short-circuit without throwing.
         Extension<PrimitiveCtors> ext = new Extension<>(PrimitiveCtors.class);
-        ext.initialize(null); // null is fine since we never call into it
+        ext.initialize(null);
     }
 }

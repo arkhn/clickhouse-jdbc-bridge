@@ -27,13 +27,10 @@ import org.testng.annotations.Test;
 
 /**
  * Exercises the default methods on the {@link DataTypeConverter} interface
- * (the {@code as()} value coercer and the {@code toMType()} mapping). The
- * abstract {@link DataTypeConverter#from} methods are exercised separately
- * via {@code com.clickhouse.jdbcbridge.impl.DefaultDataTypeConverterTest}.
+ * ({@code as()} value coercer + {@code toMType()} mapping).
  */
 public class DataTypeConverterTest {
 
-    /** Minimal stand-in so we can call default methods on the interface. */
     private static final DataTypeConverter CONV = new DataTypeConverter() {
         @Override
         public DataType from(JDBCType jdbcType, String typeName, int precision, int scale, boolean signed) {
@@ -45,8 +42,6 @@ public class DataTypeConverterTest {
             return DataType.Str;
         }
     };
-
-    // ---------- as(Boolean.class, ...) ----------
 
     @Test(groups = { "unit" })
     public void asBooleanHandlesBooleanInput() {
@@ -64,16 +59,13 @@ public class DataTypeConverterTest {
     public void asBooleanParsesStrings() {
         assertEquals(CONV.as(Boolean.class, "true"), Boolean.TRUE);
         assertEquals(CONV.as(Boolean.class, "false"), Boolean.FALSE);
-        // Boolean.parseBoolean treats anything else as false
         assertEquals(CONV.as(Boolean.class, "garbage"), Boolean.FALSE);
     }
 
-    // ---------- numeric coercions ----------
-
     @Test(groups = { "unit" })
     public void asByteAcceptsNumberBooleanAndString() {
+        // Boolean branch: true -> 0, false -> 1 (codebase convention).
         assertEquals((byte) CONV.as(Byte.class, 5), (byte) 5);
-        // Boolean branch: true -> 0, false -> 1 (the codebase chose this convention)
         assertEquals((byte) CONV.as(Byte.class, true), (byte) 0);
         assertEquals((byte) CONV.as(Byte.class, false), (byte) 1);
         assertEquals((byte) CONV.as(Byte.class, "42"), (byte) 42);
@@ -137,32 +129,30 @@ public class DataTypeConverterTest {
         assertEquals(CONV.as(BigDecimal.class, "2.5"), new BigDecimal("2.5"));
     }
 
-    // ---------- as(Date.class, ...) ----------
-
     @Test(groups = { "unit" })
     public void asDateFromIsoLocalDateString() {
+        // len == 10 -> java.sql.Date
         Object d = CONV.as(java.util.Date.class, "2026-05-18");
-        // len == 10 branch -> java.sql.Date
         assertEquals(d.getClass(), java.sql.Date.class);
     }
 
     @Test(groups = { "unit" })
     public void asDateFromIsoLocalDateTimeString() {
-        // len == 19 branch -> java.sql.Timestamp
+        // len == 19 -> java.sql.Timestamp
         Object d = CONV.as(java.util.Date.class, "2026-05-18T22:00:00");
         assertEquals(d.getClass(), java.sql.Timestamp.class);
     }
 
     @Test(groups = { "unit" })
     public void asDateFromIsoDateTimeWithOffsetString() {
-        // len > 19 branch -> java.sql.Timestamp via ISO_DATE_TIME
+        // len > 19 -> Timestamp via ISO_DATE_TIME
         Object d = CONV.as(java.util.Date.class, "2026-05-18T22:00:00.123");
         assertEquals(d.getClass(), java.sql.Timestamp.class);
     }
 
     @Test(groups = { "unit" })
     public void asDateFromBasicIsoFallback() {
-        // len < 10 falls through to BASIC_ISO_DATE (yyyyMMdd)
+        // len < 10 -> BASIC_ISO_DATE (yyyyMMdd)
         Object d = CONV.as(java.util.Date.class, "20260518");
         assertEquals(d.getClass(), java.sql.Date.class);
     }
@@ -170,7 +160,6 @@ public class DataTypeConverterTest {
     @Test(groups = { "unit" })
     public void asDateFromNumberUsesEpochMillis() {
         Object d = CONV.as(java.util.Date.class, 0L);
-        // Number branch -> plain java.util.Date(long)
         assertEquals(d.getClass(), java.util.Date.class);
         assertEquals(((java.util.Date) d).getTime(), 0L);
     }
@@ -192,12 +181,9 @@ public class DataTypeConverterTest {
 
     @Test(groups = { "unit" })
     public void asUnsupportedTypeReturnsValueUntouched() {
-        // No matching `Class<T>` branch -> value passes through as-is.
         Object marker = new Object();
         assertSame(CONV.as(Object.class, marker), marker);
     }
-
-    // ---------- toMType() / toPowerQueryType() ----------
 
     @Test(groups = { "unit" })
     public void toMTypeMapsIntegerFamilies() {
@@ -235,16 +221,13 @@ public class DataTypeConverterTest {
 
     @Test(groups = { "unit" })
     public void toMTypeFallsBackToText() {
-        // Unmapped types (Str, UUID, etc.) hit the default branch.
         assertEquals(CONV.toMType(DataType.Str), DataTypeConverter.M_TYPE_TEXT);
         assertEquals(CONV.toMType(DataType.UUID), DataTypeConverter.M_TYPE_TEXT);
     }
 
     @Test(groups = { "unit" })
     public void toPowerQueryTypeReturnsConcreteMTypeNames() {
-        // Pin concrete outputs so a future change to toPowerQueryType — e.g.
-        // returning a different Power Query namespace — trips this test
-        // instead of silently mirroring whatever toMType is doing.
+        // Pin concrete outputs so a future change trips this test (not silently mirroring toMType).
         assertEquals(CONV.toPowerQueryType(DataType.Str), DataTypeConverter.M_TYPE_TEXT);
         assertEquals(CONV.toPowerQueryType(DataType.Int32), DataTypeConverter.M_FACET_INT32);
         assertEquals(CONV.toPowerQueryType(DataType.Float64), DataTypeConverter.M_FACET_DOUBLE);

@@ -36,19 +36,11 @@ import com.clickhouse.jdbcbridge.core.Repository;
 import com.clickhouse.jdbcbridge.core.UsageStats;
 
 /**
- * Unit tests for {@link DefaultRepositoryManager} — the in-memory
- * orchestrator that maps an entity class to a registered repository.
- * The lookup path is hot (every request hits getRepository to resolve
- * the datasource by name), so pin both the happy paths and the failure
- * modes (NPE on null class, IAE when no repo accepts).
+ * Unit tests for {@link DefaultRepositoryManager} — in-memory orchestrator
+ * mapping entity class to registered repository.
  */
 public class DefaultRepositoryManagerTest {
 
-    /**
-     * Minimal Repository test double — only {@code accept} and
-     * {@code getEntityClass} matter for the manager's lookup path. The
-     * other methods are unused in this test.
-     */
     private static final class FakeRepo<T extends ManagedEntity> implements Repository<T> {
         private final Class<T> clazz;
 
@@ -65,21 +57,16 @@ public class DefaultRepositoryManagerTest {
         @Override public T get(String id) { return null; }
     }
 
-    // ---------- getRepository: null + empty + match ----------
-
     @Test(groups = { "unit" })
     public void getRepository_nullClass_throwsNPE() {
         DefaultRepositoryManager m = new DefaultRepositoryManager();
-        // Objects.requireNonNull guards the class param — pin so an
-        // accidental dereference can't silently NPE deeper in lookup.
         assertThrows(NullPointerException.class, () -> m.getRepository(null));
     }
 
     @Test(groups = { "unit" })
     public void getRepository_noReposRegistered_throwsIAE() {
+        // IAE so operator gets clear "no repository for X" rather than NPE.
         DefaultRepositoryManager m = new DefaultRepositoryManager();
-        // Empty manager — must surface as IAE so the caller can give the
-        // operator a clear "no repository for X" message rather than NPE.
         try {
             m.getRepository(NamedDataSource.class);
             org.testng.Assert.fail("expected IllegalArgumentException");
@@ -96,8 +83,7 @@ public class DefaultRepositoryManagerTest {
         FakeRepo<NamedDataSource> ds = new FakeRepo<>(NamedDataSource.class);
         m.update(Collections.singletonList(ds));
 
-        // Repository registered for NamedDataSource — lookup must return
-        // the exact same instance (no defensive copy, no proxy).
+        // Same instance — no defensive copy, no proxy.
         Repository<NamedDataSource> got = m.getRepository(NamedDataSource.class);
         assertSame(got, ds);
     }
@@ -107,8 +93,6 @@ public class DefaultRepositoryManagerTest {
         DefaultRepositoryManager m = new DefaultRepositoryManager();
         m.update(Collections.singletonList(new FakeRepo<>(NamedDataSource.class)));
 
-        // Schema is not registered — the accept() check fails for all
-        // entries, so the manager throws IAE listing the missing class.
         try {
             m.getRepository(NamedSchema.class);
             org.testng.Assert.fail("expected IllegalArgumentException for unregistered type");
@@ -121,27 +105,20 @@ public class DefaultRepositoryManagerTest {
 
     @Test(groups = { "unit" })
     public void getRepository_returnsFirstAccepting() {
+        // Two repos accepting same class: iteration order is first-wins (pin so HashMap ordering can't break it).
         DefaultRepositoryManager m = new DefaultRepositoryManager();
         FakeRepo<NamedDataSource> first = new FakeRepo<>(NamedDataSource.class);
         FakeRepo<NamedDataSource> second = new FakeRepo<>(NamedDataSource.class);
         m.update(Arrays.asList(first, second));
 
-        // When two repos both accept the same class (a real config error
-        // but possible), the iteration order is first-wins. Pin so a
-        // future map-based switch with HashMap ordering doesn't silently
-        // pick the other one.
         Repository<NamedDataSource> got = m.getRepository(NamedDataSource.class);
         assertSame(got, first);
     }
 
-    // ---------- update: null + add + multi-type ----------
-
     @Test(groups = { "unit" })
     public void update_null_isNoop() {
+        // Null is allowed (caller may pass when config parsing returned nothing).
         DefaultRepositoryManager m = new DefaultRepositoryManager();
-        // Null input must not throw — the caller may legitimately pass
-        // null when config parsing returned nothing. Following lookup
-        // still surfaces as IAE (empty manager).
         m.update(null);
         assertThrows(IllegalArgumentException.class,
                 () -> m.getRepository(NamedDataSource.class));
@@ -156,7 +133,6 @@ public class DefaultRepositoryManagerTest {
 
         m.update(new ArrayList<>(Arrays.asList(ds, sch, q)));
 
-        // All three should be reachable via their respective entity types.
         assertSame(m.getRepository(NamedDataSource.class), ds);
         assertSame(m.getRepository(NamedSchema.class), sch);
         assertSame(m.getRepository(NamedQuery.class), q);
@@ -164,6 +140,7 @@ public class DefaultRepositoryManagerTest {
 
     @Test(groups = { "unit" })
     public void update_secondCallStillResolvesEachType() {
+        // Bridge calls update once per repository type during plug-in loading.
         DefaultRepositoryManager m = new DefaultRepositoryManager();
         FakeRepo<NamedDataSource> ds = new FakeRepo<>(NamedDataSource.class);
         FakeRepo<NamedSchema> sch = new FakeRepo<>(NamedSchema.class);
@@ -171,19 +148,12 @@ public class DefaultRepositoryManagerTest {
         m.update(Collections.singletonList(ds));
         m.update(Collections.singletonList(sch));
 
-        // Each entity type still resolves to its repo after a second
-        // update call (the bridge calls update once per repository type
-        // during JsonFileRepository plug-in loading).
         assertSame(m.getRepository(NamedDataSource.class), ds);
         assertSame(m.getRepository(NamedSchema.class), sch);
     }
 
-    /**
-     * Second test double — DIFFERENT concrete class than {@link FakeRepo}
-     * so the replace-in-place branch fires. The replace branch needs
-     * {@code current.getClass() != repo.getClass()} AND
-     * {@code current.getEntityClass() != repo.getEntityClass()}.
-     */
+    // Distinct concrete class needed so the replace-in-place branch fires
+    // (requires both current.getClass() and getEntityClass() to differ).
     private static final class OtherFakeRepo<T extends ManagedEntity> implements Repository<T> {
         private final Class<T> clazz;
 
@@ -200,15 +170,8 @@ public class DefaultRepositoryManagerTest {
 
     @Test(groups = { "unit" })
     public void update_replaceBranch_swapsInPlaceWhenClassAndEntityDiffer() {
-        // The update() inner loop has a replace-in-place branch: if the
-        // incoming repo's CLASS differs from the existing repo's class AND
-        // its entityClass differs, the existing entry is overwritten at
-        // its index (rather than appended). Pin the current behavior so a
-        // future intentional change to this odd swap rule shows up here.
-        //
-        // Setup: register FakeRepo<NamedDataSource>. Then update with
-        // OtherFakeRepo<NamedSchema> — both class and entity differ, so
-        // the schema repo *replaces* the datasource repo at index 0.
+        // Replace-in-place branch: incoming repo's CLASS and entityClass both differ from existing.
+        // The schema repo *replaces* the datasource repo at index 0 — pin the odd swap rule.
         DefaultRepositoryManager m = new DefaultRepositoryManager();
         FakeRepo<NamedDataSource> first = new FakeRepo<>(NamedDataSource.class);
         m.update(Collections.singletonList(first));
@@ -216,8 +179,6 @@ public class DefaultRepositoryManagerTest {
         OtherFakeRepo<NamedSchema> second = new OtherFakeRepo<>(NamedSchema.class);
         m.update(Collections.singletonList(second));
 
-        // After the swap: NamedSchema resolves (via second), but
-        // NamedDataSource no longer does — first was kicked out.
         assertSame(m.getRepository(NamedSchema.class), second);
 
         try {
@@ -225,7 +186,7 @@ public class DefaultRepositoryManagerTest {
             org.testng.Assert.fail(
                     "datasource repo should have been replaced by schema repo (swap branch)");
         } catch (IllegalArgumentException expected) {
-            // expected — the original repo was swapped out at index 0.
+            // expected
         }
     }
 }

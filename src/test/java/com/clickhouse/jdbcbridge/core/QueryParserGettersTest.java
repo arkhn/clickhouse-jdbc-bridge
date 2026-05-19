@@ -27,14 +27,10 @@ import org.testng.annotations.Test;
 import io.vertx.core.MultiMap;
 
 /**
- * Companion tests for {@link QueryParser} — covers the lazy-init getters
- * and the public extractTable helper. Existing QueryParserTest covers
- * the static helpers (normalizeQuery, extractSchemaName, extractTableName)
- * and the QueryParameters round-trip; this file fills the rest.
+ * Tests for {@link QueryParser} lazy-init getters and the extractTable helper.
  */
 public class QueryParserGettersTest {
 
-    /** Build a parser with the same shape that QueryParser.fromRequest produces. */
     private static QueryParser build(String uri, String schema, String table,
             String columnsInfo, String inputFormat) {
         return new QueryParser(uri, schema, table, columnsInfo, inputFormat, "false",
@@ -54,9 +50,7 @@ public class QueryParserGettersTest {
 
     @Test(groups = { "unit" })
     public void usingRowBinaryInput_caseSensitiveExactMatch() {
-        // The check is `"RowBinary".equals(inputFormat)` — exact match,
-        // case-sensitive. CH-side variations like "RowBinaryWithNames" land
-        // outside this branch.
+        // Exact match; "RowBinaryWithNames" falls outside.
         assertTrue(build(null, null, null, null, "RowBinary").usingRowBinaryInput());
         assertFalse(build(null, null, null, null, "rowbinary").usingRowBinaryInput());
         assertFalse(build(null, null, null, null, "JSON").usingRowBinaryInput());
@@ -65,9 +59,7 @@ public class QueryParserGettersTest {
 
     @Test(groups = { "unit" })
     public void useNullable_parsesBooleanString() {
-        // The ctor takes the useNull arg as a String (matches the
-        // external_table_functions_use_nulls HTTP param). Anything except
-        // "true" (case-insensitive) ends up false — that's Boolean.parseBoolean.
+        // Boolean.parseBoolean: only "true" (CI) -> true; null -> false (not NPE).
         QueryParser t = new QueryParser("u", "s", "t", "c", "RowBinary", "true",
                 MultiMap.caseInsensitiveMultiMap());
         QueryParser f = new QueryParser("u", "s", "t", "c", "RowBinary", "false",
@@ -77,7 +69,6 @@ public class QueryParserGettersTest {
 
         assertTrue(t.useNullable());
         assertFalse(f.useNullable());
-        // Boolean.parseBoolean(null) is false (not NPE).
         assertFalse(nul.useNullable());
     }
 
@@ -89,7 +80,6 @@ public class QueryParserGettersTest {
         TableDefinition first = p.getTable();
         TableDefinition second = p.getTable();
 
-        // Cached on first call.
         assertSame(second, first);
         assertEquals(first.size(), 1);
         assertEquals(first.getColumn(0).getName(), "x");
@@ -97,9 +87,7 @@ public class QueryParserGettersTest {
 
     @Test(groups = { "unit" })
     public void getQueryParameters_lazyInitsFromUri() {
-        // QueryParameters are constructed lazily from the URI; once built,
-        // subsequent calls return the same instance so they can be mutated
-        // by downstream code (ds.newQueryParameters merges into it).
+        // Cached so downstream code (ds.newQueryParameters merge) can mutate it.
         QueryParser p = build("ds?max_rows=42", "", "SELECT 1", null, "RowBinary");
 
         QueryParameters first = p.getQueryParameters();
@@ -111,9 +99,7 @@ public class QueryParserGettersTest {
 
     @Test(groups = { "unit" })
     public void getNormalizedSchema_unescapesBackslashQuote() {
-        // unescapeQuotes turns `\'` (a quote preceded by a backslash, as it
-        // appears in SQL-escaped CH-side input) into a plain `'`. Pin the
-        // observed contract: result is "ab'cd", NOT "ab''cd".
+        // unescapeQuotes: `\'` -> `'`. Result is "ab'cd", NOT "ab''cd".
         QueryParser p = build("uri", "ab\\'cd", "SELECT 1", null, "RowBinary");
 
         String norm = p.getNormalizedSchema();
@@ -142,10 +128,7 @@ public class QueryParserGettersTest {
 
     @Test(groups = { "unit" })
     public void extractTable_pullsQuotedTableNameFromQuery() {
-        // The parser returns the table identifier WITH its surrounding
-        // quote characters intact — the bridge later strips them where
-        // needed. Pin this so a refactor to "unquoted name" doesn't
-        // accidentally land.
+        // Quotes intact — bridge strips them later. Pin so refactor to unquoted doesn't slip in.
         QueryParser p = build("uri", "", "ignored", null, "RowBinary");
 
         String extracted = p.extractTable("SELECT * FROM `mytable`");

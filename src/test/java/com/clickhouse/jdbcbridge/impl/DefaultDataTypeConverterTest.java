@@ -34,8 +34,6 @@ public class DefaultDataTypeConverterTest {
 
     private static final DefaultDataTypeConverter CONV = new DefaultDataTypeConverter();
 
-    // ---------- from(JDBCType, ...) ----------
-
     @Test(groups = { "unit" })
     public void tinyIntMapsByPrecisionAndSign() {
         assertEquals(CONV.from(JDBCType.TINYINT, "tinyint", 3, 0, true), DataType.Int8);
@@ -62,7 +60,7 @@ public class DefaultDataTypeConverterTest {
 
     @Test(groups = { "unit" })
     public void bitWidensIntoBiggerIntsAsPrecisionGrows() {
-        // BIT branch chooses the smallest Int* that fits `precision` bits.
+        // BIT chooses smallest Int* that fits `precision` bits.
         assertEquals(CONV.from(JDBCType.BIT, "bit", 4, 0, true), DataType.Int8);
         assertEquals(CONV.from(JDBCType.BIT, "bit", 9, 0, true), DataType.Int16);
         assertEquals(CONV.from(JDBCType.BIT, "bit", 17, 0, true), DataType.Int32);
@@ -115,14 +113,13 @@ public class DefaultDataTypeConverterTest {
 
     @Test(groups = { "unit" })
     public void unsupportedJdbcTypeFallsBackToStr() {
-        // STRUCT and friends hit the default branch -> Str.
         assertEquals(CONV.from(JDBCType.STRUCT, "struct", 0, 0, true), DataType.Str);
         assertEquals(CONV.from(JDBCType.BLOB, "blob", 0, 0, true), DataType.Str);
     }
 
     @Test(groups = { "unit" })
     public void customMappingShortCircuitsBuiltinResolution() {
-        // A custom DECIMAL->Int64 mapping must win over the built-in DECIMAL->Decimal.
+        // Custom DECIMAL->Int64 must win over built-in DECIMAL->Decimal.
         DefaultDataTypeConverter custom = new DefaultDataTypeConverter(
                 Collections.singletonList(new DataTypeMapping(JDBCType.DECIMAL, "*", DataType.Int64)));
 
@@ -131,8 +128,7 @@ public class DefaultDataTypeConverterTest {
 
     @Test(groups = { "unit" })
     public void customMappingNonMatchFallsThrough() {
-        // Mapping bound to a specific (non-wildcard) native type must not match
-        // a different native type, and the built-in resolver wins instead.
+        // Non-wildcard mapping bound to specific native must not match different native.
         DefaultDataTypeConverter custom = new DefaultDataTypeConverter(
                 Arrays.asList(new DataTypeMapping(JDBCType.BIGINT, "very-specific-type", DataType.Int8)));
 
@@ -144,8 +140,6 @@ public class DefaultDataTypeConverterTest {
         DefaultDataTypeConverter explicitNull = new DefaultDataTypeConverter(null);
         assertEquals(explicitNull.from(JDBCType.INTEGER, "int", 10, 0, true), DataType.Int32);
     }
-
-    // ---------- from(Object) ----------
 
     @Test(groups = { "unit" })
     public void fromObjectClassifiesPrimitiveBoxes() {
@@ -159,14 +153,11 @@ public class DefaultDataTypeConverterTest {
         assertEquals(CONV.from((Object) 1.0d), DataType.Float64);
         assertEquals(CONV.from(BigDecimal.ONE), DataType.Decimal256);
         assertEquals(CONV.from("hello"), DataType.Str);
-        assertEquals(CONV.from(Boolean.TRUE), DataType.Str); // not specially handled -> Str
+        assertEquals(CONV.from(Boolean.TRUE), DataType.Str);
     }
-
-    // ---------- inherited default methods still callable ----------
 
     @Test(groups = { "unit" })
     public void asPasses_throughForUntypedClasses() {
-        // Sanity check that the inherited DataTypeConverter.as() is wired.
         String marker = "marker";
         assertSame(CONV.as(String.class, marker), marker);
     }

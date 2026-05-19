@@ -24,26 +24,11 @@ import static org.testng.Assert.assertTrue;
 import org.testng.annotations.Test;
 
 /**
- * Exercises {@link TableDefinition#fromString}'s two-mode parser:
- *
- * <ul>
- *   <li>headered form (starts with {@code "columns format version: "}):
- *       the canonical wire shape ClickHouse uses for the {@code columns}
- *       request param; tests cover the inconsistent-count and
- *       not-ending-with-prefix error paths.</li>
- *   <li>inline form: bracket- and quote-aware comma-splitter that
- *       preserves commas inside {@code Enum8('A'=1,'B'=2)} or
- *       {@code Decimal(19,4)}. Tests cover paren-nesting, mismatched
- *       quotes, escape-sequences, and the empty-input fallback.</li>
- * </ul>
- *
- * <p>This parser sits between the bridge's HTTP request handler and
- * the row-streaming code, so a regression here breaks every
- * non-trivial column declaration on the read path.</p>
+ * Tests for {@link TableDefinition#fromString}'s two-mode parser:
+ * headered form (ClickHouse columns wire shape) and inline form
+ * (bracket- and quote-aware comma-splitter).
  */
 public class TableDefinitionFromStringTest {
-
-    // ---------- headered form ----------
 
     @Test(groups = { "unit" })
     public void headered_validParseRoundTrip() {
@@ -64,10 +49,9 @@ public class TableDefinitionFromStringTest {
 
     @Test(groups = { "unit" })
     public void headered_columnsCountLineMustEndWithSuffix() {
-        // The second line of a headered block must end with " columns:" —
-        // anything else triggers the "line #2 must be end with..." IAE.
+        // Line #2 must end with " columns:" — anything else triggers IAE.
         String bad = "columns format version: 1\n"
-                + "2 things:\n" // wrong suffix
+                + "2 things:\n"
                 + "`a` Int32\n"
                 + "`b` String\n";
 
@@ -77,7 +61,6 @@ public class TableDefinitionFromStringTest {
     @Test(groups = { "unit" })
     public void headered_emptyExpectedColumnsReturnsDefault() {
         // lines.size() - 2 <= 0 -> short-circuit to DEFAULT_RESULT_COLUMNS.
-        // This is the "header but no column body" path.
         String headerOnly = "columns format version: 1\n";
 
         assertSame(TableDefinition.fromString(headerOnly),
@@ -86,9 +69,6 @@ public class TableDefinitionFromStringTest {
 
     @Test(groups = { "unit" })
     public void headered_inconsistentColumnCountThrows() {
-        // Declared 5 columns but only 2 in the body. The check is
-        // `if (columns.length < Integer.parseInt(cCount))` — the IAE
-        // wraps with "inconsistent columns count: declared 5 ...".
         String inconsistent = "columns format version: 1\n"
                 + "5 columns:\n"
                 + "`a` Int32\n"
@@ -103,13 +83,9 @@ public class TableDefinitionFromStringTest {
         }
     }
 
-    // ---------- inline form: bracket-aware split ----------
-
     @Test(groups = { "unit" })
     public void inline_preservesCommaInsideParens() {
-        // Decimal(19, 4) has a comma inside (...) — the bracket-aware
-        // splitter must keep it as a single column rather than splitting
-        // "Decimal(19" from "4)".
+        // Decimal(19, 4) — bracket-aware splitter must keep it as a single column.
         TableDefinition def = TableDefinition.fromString("a Int32, b Decimal(19, 4)");
 
         assertEquals(def.size(), 2);
@@ -120,8 +96,7 @@ public class TableDefinitionFromStringTest {
 
     @Test(groups = { "unit" })
     public void inline_preservesCommaInsideEnumQuotes() {
-        // Enum8('N/A'=1,'OK'=2) has commas inside the single quotes —
-        // the quote-state in the splitter must mask them.
+        // Quote-state must mask commas inside Enum8('N/A'=1,'OK'=2).
         TableDefinition def = TableDefinition.fromString(
                 "status Enum8('N/A'=1,'OK'=2), n Int32");
 
@@ -132,9 +107,7 @@ public class TableDefinitionFromStringTest {
 
     @Test(groups = { "unit" })
     public void inline_nestedParensHandled() {
-        // Nullable(Decimal(19,4)) — two levels of parens. The Stack-based
-        // tracker pushes ( on entry, pops on closing ); single-column
-        // result.
+        // Nullable(Decimal(19,4)) — Stack-based tracker pushes ( on entry, pops on ).
         TableDefinition def = TableDefinition.fromString(
                 "x Nullable(Decimal(19, 4)), y Int32");
 
@@ -145,8 +118,6 @@ public class TableDefinitionFromStringTest {
 
     @Test(groups = { "unit" })
     public void inline_emptyInputFallsBackToDefault() {
-        // Empty input -> splittedColumns is empty -> short-circuit to
-        // DEFAULT_RESULT_COLUMNS.
         assertSame(TableDefinition.fromString(""),
                 TableDefinition.DEFAULT_RESULT_COLUMNS);
     }
@@ -160,16 +131,10 @@ public class TableDefinitionFromStringTest {
 
     @Test(groups = { "unit" })
     public void inline_backslashEscapeStepsPastNextChar() {
-        // The '\\' case appends the next character verbatim (skips its
-        // role as quote/paren marker). Useful for embedding literal commas
-        // in column names — `a\,b` becomes a column named `a,b`.
-        // Actually the parser treats the escaped char as data so the comma
-        // stays in the buffer rather than splitting. Result: one column.
+        // '\\' appends next char verbatim — escaped comma stays in buffer; result: one column.
         TableDefinition def = TableDefinition.fromString("a\\,b Int32");
         assertEquals(def.size(), 1);
     }
-
-    // ---------- null input ----------
 
     @Test(groups = { "unit" })
     public void nullInputReturnsDefault() {

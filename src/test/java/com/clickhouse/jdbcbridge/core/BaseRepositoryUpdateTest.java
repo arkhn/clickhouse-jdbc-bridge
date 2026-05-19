@@ -31,13 +31,8 @@ import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 
 /**
- * Tests for {@link BaseRepository#update(String, JsonObject)} — the
- * config-reload entry point used by JsonFileRepository's filesystem
- * scanner. This is the path that gets called every time a datasource
- * JSON file is added, changed, or touched on disk.
- *
- * <p>Also covers the {@code createFromType} / {@code createFromConfig}
- * factory helpers and the type-registry resolution.</p>
+ * Tests for {@link BaseRepository#update(String, JsonObject)} — config-reload entry point
+ * used by JsonFileRepository's filesystem scanner.
  */
 public class BaseRepositoryUpdateTest {
 
@@ -60,17 +55,13 @@ public class BaseRepositoryUpdateTest {
         }
     }
 
-    /** Reflection bridge — update is protected. We're in the same package
-     *  (core) so we could call it directly, but I want the test pattern to
-     *  be obvious in the source. */
+    // Reflection bridge — update is protected.
     private static void callUpdate(BaseRepository<NamedDataSource> repo, String id, JsonObject cfg)
             throws Exception {
         Method m = BaseRepository.class.getDeclaredMethod("update", String.class, JsonObject.class);
         m.setAccessible(true);
         m.invoke(repo, id, cfg);
     }
-
-    // ---------- update() ----------
 
     @Test(groups = { "unit" })
     public void update_newEntityIsAdded() throws Exception {
@@ -86,7 +77,7 @@ public class BaseRepositoryUpdateTest {
     @Test(groups = { "unit" })
     public void update_sameConfigIsNoOp() throws Exception {
         CountingRepo repo = new CountingRepo();
-        // Same config encoded both times -> digest matches -> no replace.
+        // Same config both times -> digest matches -> no replace.
         JsonObject cfg = new JsonObject().put("type", "default").put("setting", "value");
 
         callUpdate(repo, "ds1", cfg);
@@ -113,7 +104,6 @@ public class BaseRepositoryUpdateTest {
 
     @Test(groups = { "unit" })
     public void update_nullConfigOnUnknownIdIsNoOp() throws Exception {
-        // No existing entity + null config -> nothing to do.
         CountingRepo repo = new CountingRepo();
 
         callUpdate(repo, "never-existed", null);
@@ -136,30 +126,20 @@ public class BaseRepositoryUpdateTest {
 
     @Test(groups = { "unit" })
     public void update_aliasCollisionIsLoggedAndSkipped() throws Exception {
-        // Two entities, the second claims an alias that already exists.
-        // The mapping is preserved for the first entity; second entity's
-        // primary id still registers but the colliding alias is dropped.
+        // Second entity's primary id still registers but its colliding alias is dropped.
         CountingRepo repo = new CountingRepo();
         callUpdate(repo, "ds1", new JsonObject().put("aliases", new JsonArray().add("shared")));
         callUpdate(repo, "ds2", new JsonObject().put("aliases", new JsonArray().add("shared")));
 
         assertNotNull(repo.get("ds1"));
         assertNotNull(repo.get("ds2"));
-        // The "shared" alias must still point at ds1 (first registrant).
         assertSame(repo.get("shared"), repo.get("ds1"));
     }
 
     @Test(groups = { "unit" })
     public void update_constructorFailureIsSwallowedNotPropagated() throws Exception {
-        // BaseRepository.update catches RuntimeException + Exception around
-        // the entity construction. A bad config that makes
-        // createFromConfig throw must NOT crash the whole reload — the
+        // update() catches around construction — bad config must NOT crash the whole reload;
         // scanner needs to keep running for other datasources.
-        //
-        // We trigger this by passing a config that the default extension's
-        // constructor will reject. NamedDataSource has no "always rejects"
-        // path for arbitrary config, so we use the type registry to point
-        // at a deliberately-broken extension.
         CountingRepo repo = new CountingRepo() {
             @Override
             protected NamedDataSource createFromConfig(String id, JsonObject config) {
@@ -167,7 +147,6 @@ public class BaseRepositoryUpdateTest {
             }
         };
 
-        // Must NOT throw out of update — caught by the catch (Exception e).
         callUpdate(repo, "broken", new JsonObject().put("anything", true));
 
         assertNull(repo.get("broken"),
@@ -175,18 +154,13 @@ public class BaseRepositoryUpdateTest {
         assertEquals(repo.adds, 0, "atomicAdd must NOT be called on failure");
     }
 
-    // ---------- getExtensionByType / createFromType ----------
-
     @Test(groups = { "unit" })
     public void getExtensionByType_withRegisteredType_returnsIt() {
         CountingRepo repo = new CountingRepo();
         Extension<NamedDataSource> ext = new Extension<>(NamedDataSource.class);
         repo.registerType("jdbc", ext);
 
-        // get() with a "jdbc:..." id triggers createFromType which calls
-        // getExtensionByType(type, false). The matching type is returned.
-        // No public API directly returns the extension; we test the flow:
-        // a get() against a registered type returns a new entity.
+        // get() with a "jdbc:..." id triggers createFromType which calls getExtensionByType.
         NamedDataSource ds = repo.get("jdbc:my-test-uri");
         assertNotNull(ds, "registered type 'jdbc' must yield an adhoc entity");
         assertEquals(ds.getId(), "jdbc:my-test-uri");
@@ -194,41 +168,26 @@ public class BaseRepositoryUpdateTest {
 
     @Test(groups = { "unit" })
     public void getExtensionByType_unknownTypeReturnsNull_when_not_auto_create() {
-        // createFromType passes autoCreate=false. Unknown type + no
-        // autoCreate -> IAE thrown from getExtensionByType, but
-        // createFromType catches via its own logic — actually it returns
-        // extension==null and yields null. Let me re-check.
-        //
-        // Actually getExtensionByType throws IAE when autoCreate=false and
-        // the type isn't registered. The exception propagates out of
-        // createFromType, then out of get(). Pin that contract.
+        // getExtensionByType throws IAE when autoCreate=false and type isn't registered;
+        // exception propagates out of createFromType -> get().
         CountingRepo repo = new CountingRepo();
         repo.registerType("jdbc", new Extension<>(NamedDataSource.class));
 
-        // The type-prefix "other" isn't registered. get("other:xxx") tries
-        // createFromType("other:xxx", "other") which throws IAE.
         assertThrows(IllegalArgumentException.class, () -> repo.get("other:xxx"));
     }
 
-    // ---------- accept(Class<?>) with null and subclass ----------
-
     @Test(groups = { "unit" })
     public void accept_acceptsSupertypeOfDeclaredEntity() {
-        // accept(c) returns c != null && c.isAssignableFrom(this.clazz)
-        // — i.e. accepts c IF c is a supertype of the repo's declared
-        // entity class. So a NamedDataSourceRepo accepts ManagedEntity.
+        // accept(c) returns c.isAssignableFrom(this.clazz) — c must be supertype.
         CountingRepo repo = new CountingRepo();
         assertTrue(repo.accept(ManagedEntity.class),
                 "repo declared for NamedDataSource must accept ManagedEntity (supertype)");
     }
 
-    // ---------- update() with null entity and null config ----------
-
     @Test(groups = { "unit" })
     public void update_nullId_nullConfigPath() throws Exception {
         CountingRepo repo = new CountingRepo();
-        // mappings.get(null) is null -> addEntity = true.
-        // Then `if (addEntity && config != null)` is false -> short-circuit.
+        // mappings.get(null) is null -> addEntity = true. config == null short-circuits.
         callUpdate(repo, null, null);
 
         assertEquals(repo.adds, 0);

@@ -36,18 +36,15 @@ import org.testng.annotations.Test;
 import io.vertx.core.json.JsonObject;
 
 /**
- * Extra tests for {@link ColumnDefinition} targeting branches not exercised
- * by the existing {@code ColumnDefinitionTest}: the {@code fromObject(...)}
- * dispatcher, option-table lookup, index lifecycle, defensive-copy ctor,
- * {@code toJson} per-type quirks, and the equals/hashCode contract.
+ * Extra tests for {@link ColumnDefinition} targeting branches not exercised by
+ * {@code ColumnDefinitionTest}: fromObject dispatcher, options, index lifecycle,
+ * defensive-copy ctor, toJson quirks, equals/hashCode contract.
  */
 public class ColumnDefinitionFromObjectTest {
 
     private static ColumnDefinition col(String name, DataType type) {
         return new ColumnDefinition(name, type, true, DEFAULT_LENGTH, DEFAULT_PRECISION, DEFAULT_SCALE);
     }
-
-    // ---------- fromObject dispatcher ----------
 
     @Test(groups = { "unit" })
     public void fromObject_nullProducesDefaultStrColumn() {
@@ -76,9 +73,7 @@ public class ColumnDefinitionFromObjectTest {
 
     @Test(groups = { "unit" })
     public void fromObject_parsesMapWithAllFields() {
-        // Use FixedStr so the `length` field is actually honored (Decimal
-        // derives length from its precision and clobbers the user-supplied
-        // value).
+        // FixedStr honors `length` (Decimal derives it from precision and clobbers user value).
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("name", "tag");
         m.put("type", "FixedStr");
@@ -118,16 +113,12 @@ public class ColumnDefinitionFromObjectTest {
 
     @Test(groups = { "unit" })
     public void fromObject_arbitraryObjectStringifiedAsColumnName() {
-        // The default branch turns the object into a string and uses it as
-        // the column name with type=Str. Used by TableDefinition's primitive
-        // array dispatch for fallback elements.
+        // Default branch: stringifies the object as column name, type=Str.
         ColumnDefinition c = ColumnDefinition.fromObject(Integer.valueOf(42));
 
         assertEquals(c.getName(), "42");
         assertEquals(c.getType(), DataType.Str);
     }
-
-    // ---------- defensive-copy constructor ----------
 
     @Test(groups = { "unit" })
     public void copyConstructor_producesEqualButDistinctInstance() {
@@ -137,10 +128,8 @@ public class ColumnDefinitionFromObjectTest {
 
         assertNotSame(copy, orig);
         assertEquals(copy, orig,
-                "copy ctor must yield an instance that's equal-but-not-same; otherwise TableDefinition's defensive deep-copy in line 93 is broken");
+                "copy ctor must yield an equal-but-not-same instance");
     }
-
-    // ---------- index lifecycle ----------
 
     @Test(groups = { "unit" })
     public void index_startsUnindexedAndAcceptsExactlyOneAssignment() {
@@ -153,9 +142,7 @@ public class ColumnDefinitionFromObjectTest {
         assertTrue(c.isIndexed());
         assertEquals(c.getIndex(), 7);
 
-        // setIndex is a one-shot assignment. The bridge sets it during
-        // request-column resolution; a second call would silently rewire
-        // an in-flight request, so it must be rejected.
+        // setIndex is one-shot: a second call would silently rewire an in-flight request.
         assertThrows(IllegalStateException.class, () -> c.setIndex(3));
     }
 
@@ -164,8 +151,6 @@ public class ColumnDefinitionFromObjectTest {
         ColumnDefinition c = col("a", DataType.Int32);
         assertThrows(IllegalArgumentException.class, () -> c.setIndex(-1));
     }
-
-    // ---------- options (Enum8/Enum16) ----------
 
     @Test(groups = { "unit" })
     public void enumOptions_lookupRequiresExactNameAndExactValue() {
@@ -180,11 +165,8 @@ public class ColumnDefinitionFromObjectTest {
         assertEquals(c.requireValidOptionValue(3), 3);
         assertThrows(IllegalArgumentException.class, () -> c.requireValidOptionValue(99));
 
-        // Options map is defensively unmodifiable.
         assertThrows(UnsupportedOperationException.class, () -> c.getOptions().put("X", 9));
     }
-
-    // ---------- toJson per-type quirks ----------
 
     @Test(groups = { "unit" })
     public void fromJson_thenToJson_preservesFixedStrLength() {
@@ -228,10 +210,7 @@ public class ColumnDefinitionFromObjectTest {
 
     @Test(groups = { "unit" })
     public void toJson_decimal32ScaleEmittedWithoutPrecision() {
-        // The toJson switch falls through Decimal -> Decimal32..256 in a
-        // ladder that emits `scale` for the smaller decimal families but
-        // only emits `precision` for the unsized Decimal. This pins the
-        // contract so a reordering of the switch is caught.
+        // toJson switch ladder: smaller decimal families emit scale; only unsized Decimal emits precision.
         JsonObject src = new JsonObject().put("name", "d").put("type", "Decimal32").put("scale", 4);
         ColumnDefinition c = ColumnDefinition.fromJson(src);
 
@@ -241,18 +220,14 @@ public class ColumnDefinitionFromObjectTest {
                 "Decimal32 must emit scale but not precision");
     }
 
-    // ---------- equals / hashCode ----------
-
     @Test(groups = { "unit" })
     public void equalsAndHashCode_consistentAcrossAllFields() {
         ColumnDefinition a = col("a", DataType.Int32);
-        ColumnDefinition b = new ColumnDefinition(a); // same field values
+        ColumnDefinition b = new ColumnDefinition(a);
 
         assertEquals(a, b);
         assertEquals(a.hashCode(), b.hashCode());
 
-        // Pull each discriminating field one at a time to confirm equals
-        // includes it.
         assertNotEquals(a, col("a-renamed", DataType.Int32));
         assertNotEquals(a, col("a", DataType.Int64));
 
@@ -263,9 +238,8 @@ public class ColumnDefinitionFromObjectTest {
         ColumnDefinition indexed = col("a", DataType.Int32);
         indexed.setIndex(0);
         assertNotEquals(a, indexed,
-                "index participates in equals — two columns with same name/type but different indices must differ");
+                "index participates in equals");
 
-        // Cross-class and null comparisons.
         assertFalse(a.equals(null));
         assertFalse(a.equals("not-a-column-definition"));
         assertTrue(a.equals(a));

@@ -31,11 +31,6 @@ public class NamedQueryTest {
         return new NamedDataSourceTest.TestRepository<>(NamedQuery.class);
     }
 
-    /**
-     * A NamedQuery is also a NamedSchema and therefore needs at least one column
-     * to satisfy TableDefinition's contract; tests that don't care about columns
-     * piggyback on this helper.
-     */
     private static JsonArray oneColumn() {
         return new JsonArray().add(new JsonObject().put("name", "a").put("type", "Int32"));
     }
@@ -80,9 +75,7 @@ public class NamedQueryTest {
 
     @Test(groups = { "unit" })
     public void missingQueryFieldIsRejected() {
-        // Even with columns present, the NamedQuery constructor still requires
-        // a non-null `query` (Objects.requireNonNull). Confirms the missing-query
-        // path is rejected at construction time rather than silently storing null.
+        // NamedQuery requires non-null `query` (Objects.requireNonNull).
         JsonObject config = new JsonObject().put("columns", oneColumn());
         assertThrows(NullPointerException.class,
                 () -> new NamedQuery("q4", stubRepo(), config));

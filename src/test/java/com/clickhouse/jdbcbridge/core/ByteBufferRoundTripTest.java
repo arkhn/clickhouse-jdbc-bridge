@@ -29,23 +29,14 @@ import java.util.UUID;
 import org.testng.annotations.Test;
 
 /**
- * Round-trip tests for the wider-integer, UUID, sized-Decimal, and
- * fixed-string write/read paths in {@link ByteBuffer}. These are the
- * read-intensive RowBinary primitives the bridge spends most of its
- * streaming-response budget on — a regression that silently truncates
- * an Int256 or misaligns a Decimal128 would be invisible without coverage.
- *
- * <p>The existing {@code ByteBufferTest#testWriteAndRead} covers the basic
- * Int8–Int64, Float32/64, plain Decimal, and the simpler Date/DateTime
- * path. This file fills the gap on what that single test doesn't touch.</p>
+ * Round-trip tests for the wider-integer, UUID, sized-Decimal, and fixed-string
+ * write/read paths in {@link ByteBuffer}.
  */
 public class ByteBufferRoundTripTest {
 
     private static ByteBuffer fresh() {
         return ByteBuffer.newInstance(512);
     }
-
-    // ---------- 128- and 256-bit integers ----------
 
     @Test(groups = { "unit" })
     public void int128_roundTripsSignedAcrossZeroAndExtremes() {
@@ -83,13 +74,12 @@ public class ByteBufferRoundTripTest {
 
     @Test(groups = { "unit" })
     public void uint128_roundTripsValuesBelowSignBit() {
-        // Current contract: readUInt128 delegates to readInt128 (which is signed).
-        // Values >= 2^127 come back as negative — a latent issue worth knowing about,
-        // but pinning the existing behavior so the next reader doesn't get surprised.
+        // readUInt128 delegates to readInt128 (signed): values >= 2^127 come back negative.
+        // Latent issue worth knowing about — pinning existing behavior.
         ByteBuffer b = fresh();
         BigInteger small = BigInteger.valueOf(42);
-        BigInteger boundary = BigInteger.valueOf(2).pow(64); // doesn't fit in UInt64
-        BigInteger highButPositive = BigInteger.valueOf(2).pow(126); // safe under signed read
+        BigInteger boundary = BigInteger.valueOf(2).pow(64);
+        BigInteger highButPositive = BigInteger.valueOf(2).pow(126);
 
         b.writeUInt128(small).writeUInt128(boundary).writeUInt128(highButPositive);
 
@@ -100,7 +90,7 @@ public class ByteBufferRoundTripTest {
 
     @Test(groups = { "unit" })
     public void uint256_roundTripsValuesBelowSignBit() {
-        // Same caveat as uint128: readUInt256 returns the value sign-extended.
+        // Same caveat as uint128: readUInt256 returns sign-extended.
         ByteBuffer b = fresh();
         BigInteger huge = BigInteger.valueOf(2).pow(200).add(BigInteger.ONE);
         BigInteger highButPositive = BigInteger.valueOf(2).pow(254);
@@ -111,14 +101,12 @@ public class ByteBufferRoundTripTest {
         assertEquals(b.readUInt256(), highButPositive);
     }
 
-    // ---------- UUID ----------
-
     @Test(groups = { "unit" })
     public void uuid_roundTripsRandomAndAllZeroes() {
         ByteBuffer b = fresh();
         UUID rand = UUID.fromString("123e4567-e89b-12d3-a456-426614174000");
         UUID zero = new UUID(0L, 0L);
-        UUID maxBits = new UUID(-1L, -1L); // all bits set
+        UUID maxBits = new UUID(-1L, -1L);
 
         b.writeUUID(rand).writeUUID(zero).writeUUID(maxBits);
 
@@ -126,8 +114,6 @@ public class ByteBufferRoundTripTest {
         assertEquals(b.readUUID(), zero);
         assertEquals(b.readUUID(), maxBits);
     }
-
-    // ---------- sized Decimals ----------
 
     @Test(groups = { "unit" })
     public void decimal32_roundTripsAcrossScale() {
@@ -137,8 +123,6 @@ public class ByteBufferRoundTripTest {
         b.writeDecimal32(v, 4);
 
         BigDecimal r = b.readDecimal32(4);
-        // Decimal32 is a fixed-point Int32 internally; values are scaled by 10^scale
-        // and serialized as raw integers. Round-trip must preserve magnitude + sign.
         assertEquals(r.unscaledValue(), v.unscaledValue());
         assertEquals(r.scale(), 4);
     }
@@ -169,7 +153,7 @@ public class ByteBufferRoundTripTest {
     @Test(groups = { "unit" })
     public void decimal256_roundTrips() {
         ByteBuffer b = fresh();
-        BigDecimal v = new BigDecimal("1").movePointRight(40); // 10^40
+        BigDecimal v = new BigDecimal("1").movePointRight(40);
 
         b.writeDecimal256(v, 0);
 
@@ -179,9 +163,7 @@ public class ByteBufferRoundTripTest {
 
     @Test(groups = { "unit" })
     public void decimal_negativeValuesRoundTrip() {
-        // Use compareTo for numeric equality — readDecimal32 normalizes the
-        // result (-12.5 instead of -12.50) which would fail an unscaledValue
-        // comparison even though the numeric value is correct.
+        // Use compareTo: readDecimal32 normalizes (-12.5 vs -12.50) so unscaledValue would mismatch.
         ByteBuffer b = fresh();
         BigDecimal neg = new BigDecimal("-12.50");
 
@@ -193,17 +175,13 @@ public class ByteBufferRoundTripTest {
         assertTrue(r.signum() < 0, "negative decimal must come back negative");
     }
 
-    // ---------- fixed string + charset overload ----------
-
     @Test(groups = { "unit" })
     public void fixedString_paddedRoundTripAscii() {
+        // FixedString pads with NULs; dropping padding would corrupt wire offsets.
         ByteBuffer b = fresh();
         b.writeFixedString("hi", 8);
 
         String r = b.readFixedString(8);
-        // FixedString pads with NULs; bridge's read returns the padded buffer as a
-        // String, so the result starts with the source string. A regression that
-        // dropped padding would corrupt the wire offsets for the next field.
         assertTrue(r.startsWith("hi"), "expected prefix 'hi', got: " + r);
         assertEquals(r.length(), 8);
     }
@@ -211,7 +189,7 @@ public class ByteBufferRoundTripTest {
     @Test(groups = { "unit" })
     public void fixedString_explicitCharsetIsHonored() {
         ByteBuffer b = fresh();
-        // UTF-16BE encodes "ab" as 4 bytes (0x00 0x61 0x00 0x62).
+        // UTF-16BE encodes "ab" as 4 bytes.
         b.writeFixedString("ab", 4, StandardCharsets.UTF_16BE);
 
         String r = b.readFixedString(4, StandardCharsets.UTF_16BE);
@@ -221,23 +199,17 @@ public class ByteBufferRoundTripTest {
     @Test(groups = { "unit" },
           expectedExceptions = IllegalArgumentException.class)
     public void fixedString_oversizedInputThrowsRatherThanTruncates() {
-        // Pre-existing contract: writeFixedString routes through Utils.checkArgument
-        // which throws when the encoded bytes exceed `length`. Truncation would
-        // corrupt the wire offsets for the next field, so the throw is the
-        // correct behavior to pin.
+        // Truncation would corrupt wire offsets — throw is correct.
         ByteBuffer b = fresh();
         b.writeFixedString("abcdef", 3);
     }
-
-    // ---------- DateTime with TimeZone overloads ----------
 
     @Test(groups = { "unit" })
     public void dateTime_writeWithTimezoneRoundTripsViaSameZone() {
         ByteBuffer b = fresh();
         TimeZone utc = TimeZone.getTimeZone("UTC");
         Timestamp t = new Timestamp(1_700_000_000_000L);
-        // The seconds-precision DateTime path drops sub-second fractions; trim
-        // ours to match so the round-trip comparison is meaningful.
+        // DateTime is seconds-precision; trim sub-seconds so round-trip is meaningful.
         t = new Timestamp((t.getTime() / 1000L) * 1000L);
 
         b.writeDateTime(t, utc);
@@ -249,9 +221,7 @@ public class ByteBufferRoundTripTest {
 
     @Test(groups = { "unit" })
     public void dateTime64_acrossScales() {
-        // DateTime64 carries fractional seconds at the requested scale. The
-        // common scales in practice are 3 (ms), 6 (us), 9 (ns); pin the
-        // common case of 3 to confirm the millisecond-level path.
+        // Scale 3 = milliseconds.
         ByteBuffer b = fresh();
         Timestamp t = new Timestamp(1_700_000_000_123L);
         TimeZone utc = TimeZone.getTimeZone("UTC");
@@ -263,17 +233,14 @@ public class ByteBufferRoundTripTest {
                 "DateTime64(scale=3) must preserve millisecond precision");
     }
 
-    // ---------- enum read/write ----------
-
     @Test(groups = { "unit" })
     public void enum8AndEnum16Write_int_and_byte_overloads() {
         ByteBuffer b = fresh();
         b.writeEnum8((byte) 1);
-        b.writeEnum8(2); // int overload
+        b.writeEnum8(2);
         b.writeEnum16((short) 100);
-        b.writeEnum16(200); // int overload
+        b.writeEnum16(200);
 
-        // Read back as enum bytes / shorts via the underlying primitive reads.
         assertEquals(b.readInt8(), (byte) 1);
         assertEquals(b.readInt8(), (byte) 2);
         assertEquals(b.readInt16(), (short) 100);

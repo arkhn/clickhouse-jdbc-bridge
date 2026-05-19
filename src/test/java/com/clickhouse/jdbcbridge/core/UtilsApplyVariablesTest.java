@@ -27,18 +27,10 @@ import java.util.Map;
 import org.testng.annotations.Test;
 
 /**
- * Companion tests for {@link Utils#applyVariables} edge cases that the
- * existing {@link UtilsTest#testApplyVariables} skips: the
- * null-operator pass-through, missing closing suffix, null-value
- * handler returning the placeholder verbatim, multiple variables, and
- * the {@code indexOfKeyword} parser's stack-aware whitespace handling.
- *
- * <p>These helpers are used on every request's normalized query —
- * read-intensive code path worth pinning.</p>
+ * Edge-case tests for {@link Utils#applyVariables} and {@code indexOfKeyword}
+ * — hot path on every normalized query.
  */
 public class UtilsApplyVariablesTest {
-
-    // ---------- applyVariables(template, UnaryOperator) ----------
 
     @Test(groups = { "unit" })
     public void applyVariables_nullTemplateBecomesEmpty() {
@@ -47,15 +39,13 @@ public class UtilsApplyVariablesTest {
 
     @Test(groups = { "unit" })
     public void applyVariables_nullOperatorReturnsTemplateVerbatim() {
-        // Bypass branch: no operator -> no substitution attempted.
         assertEquals(Utils.applyVariables("hello {{name}}", (java.util.function.UnaryOperator<String>) null),
                 "hello {{name}}");
     }
 
     @Test(groups = { "unit" })
     public void applyVariables_emptyMapTreatedAsNullOperator() {
-        // The Map-arg overload routes through `variables == null || isEmpty() ? null : variables::get`,
-        // so empty map -> no substitution.
+        // Empty map -> no operator -> no substitution.
         assertEquals(Utils.applyVariables("hello {{name}}", new HashMap<>()),
                 "hello {{name}}");
     }
@@ -69,9 +59,7 @@ public class UtilsApplyVariablesTest {
 
     @Test(groups = { "unit" })
     public void applyVariables_trimsVariableNames() {
-        // Whitespace inside {{ ... }} is trimmed before lookup. ClickHouse
-        // operators format their templates with {{ name }} sometimes —
-        // pin that trim path.
+        // Whitespace inside {{ ... }} is trimmed before lookup.
         Map<String, String> vars = new HashMap<>();
         vars.put("name", "world");
         assertEquals(Utils.applyVariables("hello {{  name  }}", vars), "hello world");
@@ -88,9 +76,7 @@ public class UtilsApplyVariablesTest {
 
     @Test(groups = { "unit" })
     public void applyVariables_unknownVariableLeavesPlaceholder() {
-        // The operator returns null for unknown keys — applyVariables
-        // copies the literal "{{" and skips past it, leaving the
-        // placeholder in the output.
+        // null from operator -> applyVariables copies literal "{{" and skips past.
         Map<String, String> vars = new HashMap<>();
         vars.put("known", "x");
         String out = Utils.applyVariables("{{unknown}} and {{known}}", vars);
@@ -103,9 +89,7 @@ public class UtilsApplyVariablesTest {
 
     @Test(groups = { "unit" })
     public void applyVariables_unbalancedPrefix_appendsRestVerbatim() {
-        // Template starts a {{ but never closes — the parser appends the
-        // rest of the string and exits. Pin that contract so a refactor
-        // to throw doesn't sneak in.
+        // Unclosed {{ -> parser appends rest verbatim and exits (pin so refactor to throw doesn't sneak in).
         Map<String, String> vars = new HashMap<>();
         vars.put("x", "y");
         String out = Utils.applyVariables("hello {{unclosed", vars);
@@ -126,13 +110,9 @@ public class UtilsApplyVariablesTest {
         assertEquals(Utils.applyVariables("", new HashMap<>()), "");
     }
 
-    // ---------- depth limit (via toJsonString -> appendJsonString) ----------
-
     @Test(groups = { "unit" })
     public void appendJsonString_depthLimitTriggersIAE() {
-        // appendJsonString routes through checkDepth which throws IAE
-        // once depth exceeds OBJECT_DEPTH_LIMIT (=10). We construct a
-        // 12-deep nested list to trip the guard.
+        // checkDepth throws IAE once depth exceeds OBJECT_DEPTH_LIMIT (=10).
         Object[] nested = new Object[] { "leaf" };
         for (int i = 0; i < 12; i++) {
             nested = new Object[] { nested };
@@ -142,21 +122,16 @@ public class UtilsApplyVariablesTest {
         assertThrows(IllegalArgumentException.class, () -> Utils.toJsonString(payload));
     }
 
-    // ---------- indexOfKeyword with parenthesised expressions ----------
-
     @Test(groups = { "unit" })
     public void indexOfKeyword_skipsKeywordInsideParens() {
-        // The stack-aware parser must NOT match a keyword that appears
-        // inside parentheses — e.g. SELECT col FROM t WHERE (col FROM 1)
-        // should match the OUTER "FROM", not the one inside (...).
+        // Stack-aware: must match OUTER FROM, not one inside (...).
         String stmt = "SELECT * FROM mytable";
         int idx = Utils.indexOfKeywordIgnoreCase(stmt, "FROM");
-        assertEquals(idx, 9); // "SELECT * " is 9 chars
+        assertEquals(idx, 9);
     }
 
     @Test(groups = { "unit" })
     public void indexOfKeyword_caseSensitive() {
-        // Case-sensitive variant. Lowercase "from" must NOT match "FROM".
         int idx = Utils.indexOfKeyword("SELECT * from mytable", "FROM", false);
         assertEquals(idx, -1);
     }
@@ -167,26 +142,18 @@ public class UtilsApplyVariablesTest {
         assertEquals(idx, -1);
     }
 
-    // ---------- loadExtension with a real class ----------
-
     @Test(groups = { "unit" })
     public void loadExtension_resolvesKnownClass() {
         Extension<?> ext = Utils.loadExtension(NamedDataSource.class.getName());
 
-        // The extension wraps the loaded class; we don't pin its name
-        // (depends on EXTENSION_NAME field convention) but it must exist.
         org.testng.Assert.assertNotNull(ext);
         assertEquals(ext.getProviderClass().getName(), NamedDataSource.class.getName());
     }
 
     @Test(groups = { "unit" })
     public void loadExtension_unknownClassReturnsNull() {
-        // The internal loadClass call returns null for unknown names;
-        // loadExtension wraps it in Extension(null) which throws NPE
-        // on use, OR returns null directly. Pin the observable behavior.
+        // Extension ctor requires non-null class — loadExtension catches and yields null.
         Extension<?> ext = Utils.loadExtension("com.example.DefinitelyNotThere");
-        // The Extension constructor requires non-null class — so
-        // loadExtension catches and yields null.
         org.testng.Assert.assertNull(ext);
     }
 }

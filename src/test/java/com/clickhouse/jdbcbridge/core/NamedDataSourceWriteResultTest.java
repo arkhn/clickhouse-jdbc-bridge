@@ -25,17 +25,11 @@ import org.testng.annotations.Test;
 import io.vertx.core.json.JsonObject;
 
 /**
- * Tests for {@link NamedDataSource#executeQuery} hitting the
- * <em>debug</em> and <em>mutation</em> branches — both run entirely in
- * the base class (no JDBC needed) and write structured results through
- * the supplied {@link ResponseWriter}. Without these the writeDebugResult
- * + writeMutationResult helpers (both ~30-line bodies) are dark.
+ * Tests for {@link NamedDataSource#executeQuery} debug and mutation branches —
+ * both run in the base class (no JDBC needed).
  */
 public class NamedDataSourceWriteResultTest {
 
-    /** Capturing writer so we can assert "something was written" without
-     *  spinning up a real Vert.x HttpServerResponse. Uses ResponseWriter's
-     *  protected no-arg test seam. */
     static final class Capture extends ResponseWriter {
         int writes;
         long bytes;
@@ -54,10 +48,8 @@ public class NamedDataSourceWriteResultTest {
     }
 
     private static QueryParameters debugParams() {
-        // QueryParameters.merge(JsonObject) deliberately skips the `debug`
-        // param (security: clients can't enable debug mode via JSON).
-        // The URI-merge path doesn't carry that exclusion, so we go via
-        // a fake URI query string.
+        // QueryParameters.merge(JsonObject) deliberately skips `debug` (security: clients
+        // can't enable via JSON). URI-merge path doesn't carry that exclusion.
         return new QueryParameters("?debug=true");
     }
 
@@ -69,10 +61,6 @@ public class NamedDataSourceWriteResultTest {
 
     @Test(groups = { "unit" })
     public void executeQuery_debugBranch_writesDebugMetadataBytes() {
-        // params.isDebug() triggers writeDebugResult — populates a fixed
-        // schema (DEBUG_COLUMNS: datasource, type, definition, mtypes,
-        // query, parameters) with the bridge's own metadata. No JDBC, no
-        // backend — purely a self-describing result.
         NamedDataSource ds = build(new JsonObject());
         Capture w = new Capture();
 
@@ -88,9 +76,6 @@ public class NamedDataSourceWriteResultTest {
 
     @Test(groups = { "unit" })
     public void executeQuery_debugBranchTreatsRequestColumnsAsTemplate() {
-        // The debug writer writes one column per requestColumn, looking up
-        // the value in the synthesized metadata map. Pass DEBUG_COLUMNS as
-        // the request schema so every value resolves.
         NamedDataSource ds = build(new JsonObject().put("type", "test-type"));
         Capture w = new Capture();
 
@@ -106,11 +91,7 @@ public class NamedDataSourceWriteResultTest {
 
     @Test(groups = { "unit" })
     public void executeQuery_mutationBranchEmitsRowsValue() {
-        // The base NamedDataSource.writeMutationResult(...) override at
-        // line 219 is a no-op (subclasses provide the real impl), but
-        // executeQuery still routes mutation params to it. We cover the
-        // routing — the no-op produces no writes, which is the contract
-        // a regression to a stale subclass implementation should preserve.
+        // Base writeMutationResult is a no-op (subclasses provide real impl); we cover routing.
         NamedDataSource ds = build(new JsonObject());
         Capture w = new Capture();
 
@@ -121,16 +102,13 @@ public class NamedDataSourceWriteResultTest {
                 mutationParams(),
                 w);
 
-        // Base impl writes nothing — the JdbcDataSource subclass overrides
-        // with real Hikari-backed mutation execution.
         assertEquals(w.writes, 0,
                 "base NamedDataSource.writeMutationResult is a no-op; routing must reach it without throwing");
     }
 
     @Test(groups = { "unit" })
     public void executeQuery_normalBranchDoesNotTouchWriter() {
-        // Neither debug nor mutation -> base writeQueryResult, also a
-        // no-op in the parent. Cover the third routing branch.
+        // Neither debug nor mutation -> base writeQueryResult (also no-op).
         NamedDataSource ds = build(new JsonObject());
         Capture w = new Capture();
 
@@ -146,9 +124,7 @@ public class NamedDataSourceWriteResultTest {
 
     @Test(groups = { "unit" })
     public void executeMutation_baseClass_isNoOpButCallable() {
-        // Subclass-extension point; the base implementation only logs.
-        // Pin that calling it on the base class doesn't throw and doesn't
-        // surreptitiously write to the response.
+        // Subclass extension point; base only logs.
         NamedDataSource ds = build(new JsonObject());
         Capture w = new Capture();
 
@@ -162,14 +138,10 @@ public class NamedDataSourceWriteResultTest {
         assertEquals(w.writes, 0);
     }
 
-    // ---------- getQuoteIdentifier / getType base contract ----------
-
     @Test(groups = { "unit" })
     public void baseDataSource_quoteAndTypeDefaults() {
+        // Locks the wire shape used on every /identifier_quote and /columns_info response.
         NamedDataSource ds = build(new JsonObject());
-        // The bridge uses these strings on every /identifier_quote and
-        // /columns_info response — locking the base-class defaults so a
-        // refactor doesn't accidentally change the wire shape.
         assertEquals(ds.getQuoteIdentifier(), NamedDataSource.DEFAULT_QUOTE_IDENTIFIER);
         assertEquals(ds.getQuoteIdentifier(), "`");
         assertNotNull(ds.getType());

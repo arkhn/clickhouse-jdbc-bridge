@@ -23,13 +23,8 @@ import static org.testng.Assert.fail;
 import org.testng.annotations.Test;
 
 /**
- * Tests for two {@link Extension} reflective-failure paths NOT covered
- * by {@link ExtensionPrimitiveMatchTest}:
- *  - static {@code newInstance(Object[])} throws → ISE wrap
- *  - static {@code initialize(ExtensionManager)} throws → swallowed
- *
- * The constructor-throw + loadClass cases are pinned by
- * ExtensionPrimitiveMatchTest, so they're not duplicated here.
+ * {@link Extension} reflective-failure paths: static newInstance throws -> ISE wrap;
+ * static initialize throws -> swallowed.
  */
 public class ExtensionFailurePathsTest {
 
@@ -47,9 +42,7 @@ public class ExtensionFailurePathsTest {
 
     @Test(groups = { "unit" })
     public void newInstance_staticMethodThrows_isWrappedInIllegalStateException() {
-        // Distinct from the ThrowingCtor case (IAE wrap): when the static
-        // factory itself throws, Extension wraps in ISE with the cause
-        // preserved. Callers branch on this distinction.
+        // Distinct from ThrowingCtor (IAE wrap): static factory throw -> ISE wrap.
         Extension<ThrowingNewInstance> ext = new Extension<>(ThrowingNewInstance.class);
         try {
             ext.newInstance("arg");
@@ -63,9 +56,7 @@ public class ExtensionFailurePathsTest {
 
     @Test(groups = { "unit" })
     public void initialize_staticMethodThrows_isSwallowed() {
-        // Per Extension.initialize: failures are logged but NOT re-thrown
-        // (extensions are best-effort during boot). Pin so a tightening
-        // that re-throws breaks here intentionally.
+        // Initialize failures are logged not re-thrown (best-effort during boot).
         new Extension<>(ThrowingInitialize.class).initialize(null);
     }
 }

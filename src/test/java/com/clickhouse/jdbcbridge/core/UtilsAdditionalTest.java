@@ -31,14 +31,10 @@ import java.util.UUID;
 import org.testng.annotations.Test;
 
 /**
- * Companion tests for {@link Utils} — fills gaps in the existing
- * {@code UtilsTest} on the {@code checkArgument} family, the
- * configuration-resolution chain, file IO helpers, and small predicates
- * like {@code containsWhitespace} / {@code getValueOrEmptyString}.
+ * Tests for {@link Utils} — checkArgument family, configuration-resolution chain,
+ * file IO helpers, small predicates.
  */
 public class UtilsAdditionalTest {
-
-    // ---------- checkArgument overloads ----------
 
     @Test(groups = { "unit" })
     public void checkArgument_byteArrayLength_acceptsAtOrUnderLimit() {
@@ -117,8 +113,6 @@ public class UtilsAdditionalTest {
                 () -> Utils.checkArgument(BigInteger.valueOf(11), BigInteger.ZERO, BigInteger.TEN));
     }
 
-    // ---------- containsWhitespace ----------
-
     @Test(groups = { "unit" })
     public void containsWhitespace_matchesEachWhitespaceKind() {
         assertTrue(Utils.containsWhitespace("a b"));
@@ -136,8 +130,6 @@ public class UtilsAdditionalTest {
         assertFalse(Utils.containsWhitespace("12345"));
     }
 
-    // ---------- getValueOrEmptyString ----------
-
     @Test(groups = { "unit" })
     public void getValueOrEmptyString_nullBecomesEmpty() {
         assertEquals(Utils.getValueOrEmptyString(null), Utils.EMPTY_STRING);
@@ -149,14 +141,11 @@ public class UtilsAdditionalTest {
         assertEquals(Utils.getValueOrEmptyString(""), "");
     }
 
-    // ---------- getConfiguration (system property / env / default cascade) ----------
-
     @Test(groups = { "unit" })
     public void getConfiguration_systemPropertyTakesPrecedence() {
         String key = "utils-additional-test." + UUID.randomUUID();
         System.setProperty(key, "from-sysprop");
         try {
-            // Use an env var name guaranteed not to be set in test runtime.
             String result = Utils.getConfiguration("default-fallback", "DEFINITELY_NOT_SET_" + UUID.randomUUID(), key);
             assertEquals(result, "from-sysprop");
         } finally {
@@ -173,31 +162,23 @@ public class UtilsAdditionalTest {
 
     @Test(groups = { "unit" })
     public void getConfiguration_nullSystemPropertyArgIsTolerated() {
-        // The system-property arg may be null; fall back to env or default.
         String result = Utils.getConfiguration("fallback", "UTILS_ADD_NOT_SET_" + UUID.randomUUID(), null);
         assertEquals(result, "fallback");
     }
 
     @Test(groups = { "unit" })
     public void getConfiguration_nullDefaultYieldsEmptyStringWhenNothingMatches() {
-        // No sys prop set, no env var set, default=null -> the empty-string
-        // sentinel rather than null. Pins the contract that getConfiguration
-        // never returns null.
+        // getConfiguration must never return null — returns EMPTY_STRING sentinel.
         String result = Utils.getConfiguration(null, "UTILS_ADD_NOT_SET_" + UUID.randomUUID(),
                 "utils.additional.not.set." + UUID.randomUUID());
         assertEquals(result, Utils.EMPTY_STRING);
     }
 
-    // ---------- fileExists / loadTextFromFile ----------
-
     @Test(groups = { "unit" })
     public void fileExists_returnsFalseForMissingPathsAndNull() {
         assertFalse(Utils.fileExists("/nonexistent/path/" + UUID.randomUUID() + ".txt"));
-        // null path is caught in the try/catch -> false
+        // null path caught in try/catch -> false.
         assertFalse(Utils.fileExists(null));
-        // Note: empty string Paths.get("") resolves to the current dir which
-        // exists, so fileExists("") returns true. Not asserting on that
-        // unless we want to pin a behavior change to "" -> false.
     }
 
     @Test(groups = { "unit" })
@@ -225,8 +206,6 @@ public class UtilsAdditionalTest {
         }
     }
 
-    // ---------- addTypedParameter ----------
-
     @Test(groups = { "unit" })
     public void addTypedParameter_registersByName() {
         Map<String, TypedParameter<?>> reg = new HashMap<>();
@@ -238,13 +217,9 @@ public class UtilsAdditionalTest {
         assertEquals(reg.get("max_rows"), p);
     }
 
-    // ---------- splitByChar — non-tokenizing branch ----------
-
     @Test(groups = { "unit" })
     public void splitByChar_nonTokenizingPreservesEmptyAndWhitespaceFields() {
-        // The default tokenizing form drops empty fields; the non-tokenizing
-        // overload preserves them — important when callers rely on stable
-        // column indices (e.g. CSV-style parsing).
+        // Non-tokenizing overload preserves empty fields (CSV column-index stability).
         java.util.List<String> tokens = Utils.splitByChar("a,,c, ", ',', false);
         assertEquals(tokens.size(), 4);
         assertEquals(tokens.get(0), "a");
@@ -257,8 +232,6 @@ public class UtilsAdditionalTest {
     public void splitByChar_nullStringYieldsEmptyList() {
         assertTrue(Utils.splitByChar(null, ',').isEmpty());
     }
-
-    // ---------- digest ----------
 
     @Test(groups = { "unit" })
     public void digest_nullAndEmptyStringYieldEmpty() {

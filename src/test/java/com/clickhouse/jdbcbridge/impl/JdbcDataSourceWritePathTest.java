@@ -45,9 +45,8 @@ import com.clickhouse.jdbcbridge.core.TableDefinition;
 import io.vertx.core.json.JsonObject;
 
 /**
- * Exercises {@link JdbcDataSource}'s mutation path (writeMutationResult)
- * and the bare-table-name short-circuit in writeQueryResult, both of
- * which are reachable in production but skipped by the existing H2 tests.
+ * Tests for {@link JdbcDataSource} mutation path (writeMutationResult) and
+ * bare-table-name short-circuit in writeQueryResult.
  */
 public class JdbcDataSourceWritePathTest {
 
@@ -127,8 +126,6 @@ public class JdbcDataSourceWritePathTest {
                 DataType.DEFAULT_LENGTH, DataType.DEFAULT_PRECISION, DataType.DEFAULT_SCALE);
     }
 
-    // ---------- mutation path ----------
-
     @Test(groups = { "unit" })
     public void mutation_insertReportsAffectedRowsAndPersistsRow() throws Exception {
         JdbcDataSource ds = new JdbcDataSource("h2-mut-insert", repo(), baseConfig());
@@ -145,8 +142,7 @@ public class JdbcDataSourceWritePathTest {
 
             assertTrue(w.bytes > 0, "mutation must emit a result row with affected-rows count");
 
-            // JdbcDataSource's constructor deregisters our H2 driver during
-            // Hikari init; restore it before opening a verify connection.
+            // Constructor deregistered the H2 driver during Hikari init; restore before verify.
             ensureH2Driver();
             try (Connection conn = DriverManager.getConnection(h2Url, "sa", "");
                     Statement s = conn.createStatement();
@@ -203,8 +199,7 @@ public class JdbcDataSourceWritePathTest {
                         cols, mutationParams(), w);
                 fail("expected mutation against a missing table to throw");
             } catch (DataAccessException e) {
-                // writeMutationResult wraps the SQLException as DataAccessException
-                // with the ds id baked into the message.
+                // writeMutationResult wraps SQLException as DAE with ds id in message.
                 assertTrue(e.getMessage().contains("h2-mut-error"),
                         "thrown message must include ds id: " + e.getMessage());
             }
@@ -215,16 +210,10 @@ public class JdbcDataSourceWritePathTest {
         }
     }
 
-    // ---------- bare-table-name short-circuit in writeQueryResult ----------
-
     @Test(groups = { "unit" })
     public void queryByBareTableName_buildsSelectFromAndStreams() {
-        // When loadedQuery has no whitespace, writeQueryResult treats it as a
-        // table name and builds "SELECT cols FROM `<table>`" itself. This is
-        // the ClickHouse-style "jdbc('ds', '', 'items')" path.
-        // H2 in PostgreSQL mode uppercases unquoted identifiers, so the
-        // stored table name is ITEMS. The bridge quotes whatever we hand it,
-        // so we must hand it the uppercase form.
+        // loadedQuery with no whitespace -> treated as table name, "SELECT cols FROM `<table>`".
+        // H2 PG mode uppercases unquoted identifiers -> use ITEMS.
         JdbcDataSource ds = new JdbcDataSource("h2-bare-table", repo(), baseConfig());
         try {
             TableDefinition cols = new TableDefinition(
@@ -240,13 +229,9 @@ public class JdbcDataSourceWritePathTest {
         }
     }
 
-    // ---------- schema-prefixed bare table name ----------
-
     @Test(groups = { "unit" })
     public void queryByBareTable_schemaPrefixIsHonored() {
-        // H2 stores the default schema as PUBLIC. The bridge wraps the table
-        // with `<schema>`.`<table>` when schema is non-empty and
-        // whitespace-free.
+        // schema non-empty + whitespace-free -> bridge wraps as `<schema>`.`<table>`.
         JdbcDataSource ds = new JdbcDataSource("h2-schema-prefix", repo(), baseConfig());
         try {
             TableDefinition cols = new TableDefinition(col("ID", DataType.Int32));

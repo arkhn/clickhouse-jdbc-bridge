@@ -22,12 +22,8 @@ import static org.testng.Assert.assertTrue;
 import org.testng.annotations.Test;
 
 /**
- * Walks {@link ByteBuffer#writeDefaultValue} through every DataType
- * branch. This path is the bridge's fallback for NULL cells when the
- * caller requested {@code null_as_default=true}, so it runs once per
- * NULL cell on the read path — a regression that misroutes a default
- * (e.g. Int128 -> writeInt8) would silently corrupt response bytes
- * for the column type.
+ * Walks {@link ByteBuffer#writeDefaultValue} through every DataType branch
+ * (NULL-cell fallback when {@code null_as_default=true}).
  */
 public class ByteBufferWriteDefaultValueTest {
 
@@ -43,12 +39,6 @@ public class ByteBufferWriteDefaultValueTest {
         return ByteBuffer.newInstance(512);
     }
 
-    /**
-     * Each branch must emit at least one byte. We don't pin the exact
-     * wire format here (covered by ByteBufferTest + ByteBufferRoundTripTest);
-     * the assertion is "the switch routed to the right write* helper and
-     * something landed on the wire".
-     */
     private static void assertNonEmpty(ByteBuffer b, DataType t) {
         assertTrue(b.length() > 0,
                 "writeDefaultValue must emit bytes for " + t + ", got 0");
@@ -76,7 +66,6 @@ public class ByteBufferWriteDefaultValueTest {
         b.writeDefaultValue(col(DataType.Float32), dv);
         b.writeDefaultValue(col(DataType.Float64), dv);
 
-        // 4 + 8 = 12 bytes
         assertEquals(b.length(), 12);
     }
 
@@ -94,9 +83,8 @@ public class ByteBufferWriteDefaultValueTest {
 
     @Test(groups = { "unit" })
     public void writeDefaultValue_decimalFamilies() {
+        // scale > 0 so inner writeDecimal* doesn't divide by zero.
         DefaultValues dv = new DefaultValues();
-        // Each Decimal* branch needs a scale > 0 so the inner writeDecimal*
-        // does not divide by zero. precision is taken from the column.
         ByteBuffer b = fresh();
         b.writeDefaultValue(col(DataType.Decimal, 0, 18, 2), dv);
         b.writeDefaultValue(col(DataType.Decimal32, 0, 9, 2), dv);
@@ -143,8 +131,6 @@ public class ByteBufferWriteDefaultValueTest {
 
     @Test(groups = { "unit" })
     public void writeDefaultValue_fluentReturn() {
-        // writeDefaultValue returns `this` for chaining — covers the
-        // `return this;` line on the tail of the switch.
         ByteBuffer b = fresh();
         ByteBuffer ret = b.writeDefaultValue(col(DataType.Int32), new DefaultValues());
 

@@ -42,15 +42,8 @@ import com.clickhouse.jdbcbridge.core.TableDefinition;
 import io.vertx.core.json.JsonObject;
 
 /**
- * Drives {@link JdbcDataSource.ResultSetReader#read} through the wider-
- * integer (Int128/Int256, UInt128/UInt256), large-Decimal (128/256),
- * Bool, and Enum8/Enum16 branches that the existing
- * {@code JdbcDataSourceReadPathTest} doesn't reach.
- *
- * <p>These are read-intensive paths — every ClickHouse query that
- * requests a Decimal128 or Int256 column lands in one of these
- * branches. A regression that misroutes (e.g. Int128 routed to
- * writeInt64) would silently truncate response bytes.</p>
+ * Drives {@link JdbcDataSource.ResultSetReader#read} through wider-integer,
+ * large-Decimal, Bool, and Enum branches.
  */
 public class JdbcDataSourceWideTypesTest {
 
@@ -63,12 +56,8 @@ public class JdbcDataSourceWideTypesTest {
                 + ";DB_CLOSE_DELAY=-1;MODE=PostgreSQL";
         try (Connection conn = DriverManager.getConnection(h2Url, "sa", "");
                 Statement s = conn.createStatement()) {
-            // BIGINT for Int128/256 read via rs.getObject(.., BigInteger.class)
-            // — H2 returns Long but the JDBC driver upcasts to BigInteger.
-            // DECIMAL(38, ...) covers Decimal128 (~38 digit precision).
-            // BOOLEAN for the Bool branch in ResultSetReader.
-            // SMALLINT serves Enum8/Enum16 (the read switch interprets
-            // integer values directly).
+            // BIGINT -> Int128/256 via rs.getObject(BigInteger.class).
+            // DECIMAL(38,...) covers Decimal128. SMALLINT serves Enum8/16.
             s.execute("CREATE TABLE wide ("
                     + "big BIGINT, "
                     + "huge DECIMAL(38, 4), "
@@ -145,21 +134,17 @@ public class JdbcDataSourceWideTypesTest {
         return new ColumnDefinition(name, type, false, length, precision, scale);
     }
 
-    // ---------- Int128 / Int256 branches ----------
-
     @Test(groups = { "unit" })
     public void readPath_int128_routesToBigIntegerWriteInt128() {
+        // Int128 -> rs.getObject(BigInteger.class) + writeInt128 (16 bytes/cell).
         JdbcDataSource ds = new JdbcDataSource("h2-int128", repo(), baseConfig());
         try {
-            // Mark the column type Int128 — ResultSetReader routes through
-            // rs.getObject(col, BigInteger.class) + writeInt128.
             TableDefinition cols = new TableDefinition(col("BIG", DataType.Int128));
             Capture w = new Capture();
 
             ds.executeQuery("", "SELECT big FROM wide", "SELECT big FROM wide",
                     cols, new QueryParameters(), w);
 
-            // Int128 writes 16 bytes per cell. One row -> 16 bytes minimum.
             assertTrue(w.bytes >= 16,
                     "Int128 branch must emit at least 16 bytes per row; got " + w.bytes);
         } finally {
@@ -177,7 +162,6 @@ public class JdbcDataSourceWideTypesTest {
             ds.executeQuery("", "SELECT big FROM wide", "SELECT big FROM wide",
                     cols, new QueryParameters(), w);
 
-            // Int256 writes 32 bytes per cell.
             assertTrue(w.bytes >= 32,
                     "Int256 branch must emit at least 32 bytes per row; got " + w.bytes);
         } finally {
@@ -187,6 +171,7 @@ public class JdbcDataSourceWideTypesTest {
 
     @Test(groups = { "unit" })
     public void readPath_uint128_uint256_routeViaBigInteger() {
+        // UInt128 delegates to writeUInt128 -> writeInt128 (16 bytes/cell).
         JdbcDataSource ds = new JdbcDataSource("h2-uint-wide", repo(), baseConfig());
         try {
             TableDefinition cols = new TableDefinition(
@@ -196,8 +181,6 @@ public class JdbcDataSourceWideTypesTest {
             ds.executeQuery("", "SELECT big FROM wide", "SELECT big FROM wide",
                     cols, new QueryParameters(), w);
 
-            // UInt128 path delegates to writeUInt128 -> writeInt128 internally.
-            // 16 bytes minimum per row.
             assertTrue(w.bytes >= 16,
                     "UInt128 must emit 16 bytes per row; got " + w.bytes);
         } finally {
@@ -205,14 +188,11 @@ public class JdbcDataSourceWideTypesTest {
         }
     }
 
-    // ---------- Decimal128 / Decimal256 ----------
-
     @Test(groups = { "unit" })
     public void readPath_decimal128_routesByScale() {
+        // Decimal128 -> writeDecimal128 (16 raw bytes per value).
         JdbcDataSource ds = new JdbcDataSource("h2-dec128", repo(), baseConfig());
         try {
-            // Decimal128 column with explicit scale=4; bridge calls
-            // writeDecimal128 which uses 16 raw bytes per value.
             TableDefinition cols = new TableDefinition(
                     col("HUGE", DataType.Decimal128, 0, 38, 4));
             Capture w = new Capture();
@@ -229,9 +209,9 @@ public class JdbcDataSourceWideTypesTest {
 
     @Test(groups = { "unit" })
     public void readPath_decimal256_routesByScale() {
+        // Decimal256 -> 32 raw bytes per value.
         JdbcDataSource ds = new JdbcDataSource("h2-dec256", repo(), baseConfig());
         try {
-            // Decimal256 -> 32 raw bytes per value.
             TableDefinition cols = new TableDefinition(
                     col("AMOUNT", DataType.Decimal256, 0, 50, 8));
             Capture w = new Capture();
@@ -246,56 +226,31 @@ public class JdbcDataSourceWideTypesTest {
         }
     }
 
-    // ---------- Bool branch ----------
-
     @Test(groups = { "unit" })
     public void readPath_bool_routesViaEnum8WithImplicitOptions() {
-        // The Bool branch shares its code with Enum / Enum8: it routes
-        // rs.getObject() through metadata.requireValidOptionValue OR
-        // metadata.getOptionValue(String). For Bool, the integer option
-        // values are 0 (false) and 1 (true). We must declare the column
-        // with these options for the test row's TRUE to route cleanly.
+        // Bool ColumnDefs may lack "true"/"false" options -> route H2 Boolean via Int8 (rs.getInt 1/0).
         JdbcDataSource ds = new JdbcDataSource("h2-bool", repo(), baseConfig());
         try {
-            // Encode the Bool column with explicit options "false=0,true=1".
-            // Using ColumnDefinition.fromString lets us reuse the existing
-            // inline-schema parser which builds options correctly.
             ColumnDefinition boolCol = ColumnDefinition.fromString(
                     "flag Bool");
-            // Bool needs options; the bridge defaults to (0, 1) for Bool but
-            // the test row is TRUE which the driver returns as Boolean true.
-            // The reader routes Boolean through getOptionValue("true").
-            //
-            // H2 returns BOOLEAN as Java Boolean. The ResultSetReader Bool
-            // branch handles `value instanceof Integer` (false) and falls
-            // to `metadata.getOptionValue(String.valueOf(value))` ->
-            // getOptionValue("true"). Bool ColumnDefinitions don't always
-            // ship with "true"/"false" options pre-set, so this would
-            // throw. Instead, route Boolean H2 results through Int8 path.
-            // Use Int8 column type; H2's BOOLEAN -> rs.getInt returns 1/0.
             TableDefinition cols = new TableDefinition(col("FLAG", DataType.Int8));
             Capture w = new Capture();
 
             ds.executeQuery("", "SELECT flag FROM wide", "SELECT flag FROM wide",
                     cols, new QueryParameters(), w);
 
-            // Int8 emits 1 byte per row.
             assertTrue(w.bytes >= 1,
                     "Boolean-as-Int8 branch must emit a byte; got " + w.bytes);
 
-            // Avoid unused-warning on the Bool ColumnDefinition we built.
             assertTrue(boolCol != null);
         } finally {
             ds.close();
         }
     }
 
-    // ---------- isNull path with NULL cell ----------
-
     @Test(groups = { "unit" })
     public void readPath_nullCellRoutesViaWriteNull() throws Exception {
-        // Create a separate table with a nullable column and a NULL row;
-        // exercise the isNull check inside ResultSetReader.
+        // Nullable column with NULL row exercises the isNull check inside ResultSetReader.
         try (Connection conn = DriverManager.getConnection(h2Url, "sa", "");
                 Statement s = conn.createStatement()) {
             s.execute("CREATE TABLE nullable_t (id INT, label VARCHAR(16))");
@@ -314,15 +269,11 @@ public class JdbcDataSourceWideTypesTest {
                     "SELECT label FROM nullable_t ORDER BY id",
                     cols, new QueryParameters(), w);
 
-            // Nullable column: each row writes a null marker (1 byte) +
-            // optionally a value. The first row is NULL -> 1 byte. The
-            // second is "second" -> 1 (non-null marker) + leb128 length
-            // + 6 chars = 8 bytes. Total >= 9 bytes.
+            // NULL row -> 1 byte marker; "second" -> 1 + leb128 + 6 chars = 8 bytes; total >= 9.
             assertTrue(w.bytes >= 9,
                     "nullable column must emit null marker for the NULL row; got " + w.bytes);
         } finally {
             ds.close();
-            // Best-effort cleanup of the helper table; ignore failures.
             try (Connection conn = DriverManager.getConnection(h2Url, "sa", "");
                     Statement s = conn.createStatement()) {
                 s.execute("DROP TABLE nullable_t");
@@ -331,29 +282,20 @@ public class JdbcDataSourceWideTypesTest {
         }
     }
 
-    // ---------- absence of options on a column with default fromString ----------
-
     @Test(groups = { "unit" })
     public void readPath_unconfiguredCustomColumnHasEmptyOptions() {
-        // Sanity-check that ColumnDefinition built without explicit options
-        // exposes Collections.emptyMap() rather than NPE-ing. This is the
-        // shape the bridge sees for plain Int32 / Str columns in requests.
+        // Plain Int32/Str columns: getOptions must be empty map, not NPE.
         ColumnDefinition c = new ColumnDefinition("c", DataType.Int32, false,
                 DataType.DEFAULT_LENGTH, DataType.DEFAULT_PRECISION, DataType.DEFAULT_SCALE);
 
         assertTrue(c.getOptions() != null);
         assertTrue(c.getOptions().isEmpty());
-        // Also pin that getOptions is the unmodifiable empty map (or
-        // equivalent) -- callers may attempt to mutate, must fail loudly.
         try {
             c.getOptions().put("x", 1);
-            // If it didn't throw, that's still acceptable since the contract
-            // doesn't strictly require unmodifiable; just pin behavior.
         } catch (UnsupportedOperationException expected) {
             // unmodifiable map throws — pinned
         }
 
-        // Force the unused-warning suppression.
         assertTrue(Collections.emptyMap() != null);
     }
 }
