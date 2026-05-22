@@ -1,3 +1,9 @@
+## [1.1.0-rc.11](https://github.com/arkhn/clickhouse-jdbc-bridge/compare/v1.1.0-rc.10...v1.1.0-rc.11) (2026-05-22)
+
+### Bug Fixes
+
+* add intersystem jdbc driver to full packaging ([08bc0fe](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/08bc0feb543044f5217e21ba38dd40aad2c65c61))
+
 ## [1.1.0-rc.10](https://github.com/arkhn/clickhouse-jdbc-bridge/compare/v1.1.0-rc.9...v1.1.0-rc.10) (2026-05-19)
 
 ### Bug Fixes
