@@ -22,6 +22,8 @@ import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.function.Consumer;
 
 import com.clickhouse.jdbcbridge.core.AdhocPolicy;
@@ -86,6 +88,15 @@ public class JdbcBridgeVerticle extends AbstractVerticle implements ExtensionMan
     private static final String CONFIG_PATH = Utils.getConfiguration("config", "CONFIG_DIR", "jdbc-bridge.config.dir");
     private static final boolean SERIAL_MODE = Boolean
             .valueOf(Utils.getConfiguration("false", "SERIAL_MODE", "jdbc-bridge.serial.mode"));
+    // Toggle: dispatch the blocking JDBC handlers onto a virtual-thread executor
+    // instead of the Vert.x worker pool. Set via env VIRTUAL_THREADS=true or
+    // -Djdbc-bridge.virtual.threads=true. Requires JDK 21+ (we target 25).
+    private static final boolean USE_VIRTUAL_THREADS = Boolean
+            .valueOf(Utils.getConfiguration("false", "VIRTUAL_THREADS", "jdbc-bridge.virtual.threads"));
+    private static final ExecutorService VIRTUAL_THREAD_EXECUTOR = USE_VIRTUAL_THREADS
+            ? Executors.newThreadPerTaskExecutor(
+                    Thread.ofVirtual().name("jdbc-bridge-vt-", 0).factory())
+            : null;
 
     private static final int DEFAULT_SERVER_PORT = 9019;
 
@@ -277,10 +288,18 @@ public class JdbcBridgeVerticle extends AbstractVerticle implements ExtensionMan
                 .handler(this::handleIdentifierQuote);
         router.post("/columns_info").produces(RESPONSE_CONTENT_TYPE).handler(queryTimeoutHandler)
                 .handler(this::handleColumnsInfo);
-        router.post("/").produces(RESPONSE_CONTENT_TYPE).handler(queryTimeoutHandler).blockingHandler(this::handleQuery,
-                SERIAL_MODE);
-        router.post("/write").produces(RESPONSE_CONTENT_TYPE).handler(queryTimeoutHandler)
-                .blockingHandler(this::handleWrite, SERIAL_MODE);
+        if (USE_VIRTUAL_THREADS) {
+            log.info("Virtual threads ENABLED — query/write handlers dispatched to virtual-thread executor");
+            router.post("/").produces(RESPONSE_CONTENT_TYPE).handler(queryTimeoutHandler)
+                    .handler(ctx -> dispatchOnVirtualThread(ctx, this::handleQuery));
+            router.post("/write").produces(RESPONSE_CONTENT_TYPE).handler(queryTimeoutHandler)
+                    .handler(ctx -> dispatchOnVirtualThread(ctx, this::handleWrite));
+        } else {
+            router.post("/").produces(RESPONSE_CONTENT_TYPE).handler(queryTimeoutHandler)
+                    .blockingHandler(this::handleQuery, SERIAL_MODE);
+            router.post("/write").produces(RESPONSE_CONTENT_TYPE).handler(queryTimeoutHandler)
+                    .blockingHandler(this::handleWrite, SERIAL_MODE);
+        }
 
         log.info("Starting web server...");
         int port = bridgeServerConfig.getInteger("serverPort", DEFAULT_SERVER_PORT);
@@ -289,6 +308,20 @@ public class JdbcBridgeVerticle extends AbstractVerticle implements ExtensionMan
                 log.info("Server http://0.0.0.0:{} started in {} ms", port, System.currentTimeMillis() - startTime);
             } else {
                 log.error("Failed to start server", action.cause());
+            }
+        });
+    }
+
+    // Runs `handler` on a virtual thread. Matches Vert.x's blockingHandler
+    // contract w.r.t. exceptions: any throwable is funneled into ctx.fail so the
+    // configured failureHandler (errorHandler) writes the 5xx response.
+    private void dispatchOnVirtualThread(RoutingContext ctx,
+            io.vertx.core.Handler<RoutingContext> handler) {
+        VIRTUAL_THREAD_EXECUTOR.execute(() -> {
+            try {
+                handler.handle(ctx);
+            } catch (Throwable t) {
+                ctx.fail(t);
             }
         });
     }

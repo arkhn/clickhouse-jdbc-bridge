@@ -125,6 +125,7 @@ scraping (`/metrics`) and probes (`/ping`).
 | `SCHEMA_CONFIG_DIR` | `jdbc-bridge.schema.config.dir` | `schemas` | Directory for named schemas |
 | `SERVER_CONFIG_FILE` | `jdbc-bridge.server.config.file` | `server.json` | Bridge server configuration |
 | `VERTX_CONFIG_FILE` | `jdbc-bridge.vertx.config.file` | `vertx.json` | Vert.x configuration |
+| `VIRTUAL_THREADS` | `jdbc-bridge.virtual.threads` | `true` (image default) | Dispatch `/query` and `/write` onto a virtual-thread executor instead of the Vert.x worker pool. Set `false` to restore the platform-thread `blockingHandler` path |
 
 ## Further reading
 

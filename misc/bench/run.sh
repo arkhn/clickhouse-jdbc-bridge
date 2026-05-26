@@ -47,6 +47,7 @@ W3_LIMITS="100000,1000000"
 W5_BATCHES="100,1000"
 GATE="false"
 GATE_ONLY="false"
+VIRTUAL_THREADS_MODE="off"
 
 usage() {
   cat <<EOF
@@ -64,6 +65,9 @@ Options:
   --w5-batches LIST   comma-separated batch sizes for W5                  [default: 100,1000]
   --skip-load         skip the datagen step
   --gate              apply thresholds.yaml after run, exit non-zero on fail
+  --virtual-threads MODE  on|off — dispatch /query and /write to virtual    [default: off]
+                          threads instead of the Vert.x worker pool. Run
+                          once with off, once with on, then compare labels.
   --label NAME        results dir name                                    [default: ISO timestamp]
   -h|--help
 
@@ -89,6 +93,7 @@ while [[ $# -gt 0 ]]; do
     --skip-load)    SKIP_LOAD="true"; shift ;;
     --gate)         GATE="true"; shift ;;
     --gate-only)    GATE_ONLY="true"; GATE="true"; shift ;;
+    --virtual-threads) VIRTUAL_THREADS_MODE="$2"; shift 2 ;;
     --label)        LABEL="$2"; shift 2 ;;
     -h|--help)      usage; exit 0 ;;
     *) echo "unknown arg: $1" >&2; usage; exit 1 ;;
@@ -113,10 +118,22 @@ fi
 
 echo ">>> results dir: $OUT_DIR"
 
+case "$VIRTUAL_THREADS_MODE" in
+  on)  VIRTUAL_THREADS_ENV="true"  ;;
+  off) VIRTUAL_THREADS_ENV="false" ;;
+  *)   echo "--virtual-threads must be on|off (got: $VIRTUAL_THREADS_MODE)" >&2; exit 1 ;;
+esac
+export VIRTUAL_THREADS="$VIRTUAL_THREADS_ENV"
+echo ">>> virtual threads: $VIRTUAL_THREADS_MODE (VIRTUAL_THREADS=$VIRTUAL_THREADS)"
+
 # ---------------------------------------------------------------------------- stack
 
 echo ">>> bringing up stack"
 docker compose -f "$BENCH_COMPOSE" up -d --no-build --remove-orphans 2>&1 | tail -10
+# Force-recreate the bridge if its env changed since last run (compose otherwise
+# reuses an existing container with stale env, which silently invalidates the
+# virtual-threads toggle).
+docker compose -f "$BENCH_COMPOSE" up -d --no-build --force-recreate jdbc-bridge 2>&1 | tail -5
 
 echo ">>> waiting for healthchecks (up to 5min)"
 for i in $(seq 1 60); do
@@ -172,6 +189,7 @@ done
   echo "- duration: ${DURATION}s"
   echo "- datasources: $DATASOURCES"
   echo "- rows: $ROWS"
+  echo "- virtual_threads: $VIRTUAL_THREADS_MODE"
   echo ""
   if [[ "$EMULATED" == "true" ]]; then
     echo "> **emulated=true** — SQL Server and ClickHouse and the bridge run under amd64 emulation on this host."

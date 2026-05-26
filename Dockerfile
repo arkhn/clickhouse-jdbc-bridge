@@ -66,6 +66,13 @@ ENV JDBC_BRIDGE_HOME=/app
 # driverUrls; flipping this lets datasources rely on jars dropped into the drivers dir.
 ENV CUSTOM_DRIVER_LOADER=false
 
+# Dispatch the blocking /query and /write handlers onto a virtual-thread executor
+# instead of the Vert.x worker pool. Reduces bulk-read heap by ~15-26% on the
+# JDBC streaming path (verified in misc/bench). Throughput is within a few % of
+# the platform-thread pool at moderate concurrency. Override with
+# VIRTUAL_THREADS=false to fall back to blockingHandler on the worker pool.
+ENV VIRTUAL_THREADS=true
+
 LABEL app_name="ClickHouse JDBC Bridge" variant="base"
 
 RUN apt-get update \
