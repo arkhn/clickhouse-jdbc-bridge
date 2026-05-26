@@ -23,6 +23,11 @@ import java.util.List;
 
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import com.clickhouse.jdbcbridge.core.AdhocPolicy;
 import com.clickhouse.jdbcbridge.core.BaseRepository;
@@ -170,5 +175,107 @@ public class JdbcBridgeVerticleTest {
                 false);
 
         assertNull(ds);
+    }
+
+    // -------- virtual-thread dispatch ----------------------------------------
+    // The dispatch seam is a static method that takes an executor + a task +
+    // a failure callback, so it can be exercised without a live RoutingContext.
+    // The instance method dispatchOnVirtualThread is a thin delegate (verified
+    // by inspection) — these tests cover the contract the delegate relies on.
+
+    @Test(groups = { "unit" })
+    public void dispatch_runsTaskOffCallingThread() throws Exception {
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        try {
+            AtomicReference<Thread> ranOn = new AtomicReference<>();
+            CountDownLatch latch = new CountDownLatch(1);
+
+            JdbcBridgeVerticle.dispatch(executor,
+                    () -> { ranOn.set(Thread.currentThread()); latch.countDown(); },
+                    t -> {});
+
+            assertTrue(latch.await(5, TimeUnit.SECONDS), "task did not run within 5s");
+            assertNotSame(ranOn.get(), Thread.currentThread(),
+                    "dispatch must hand the task off, not run it inline on the caller");
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    @Test(groups = { "unit" })
+    public void dispatch_routesThrowableToFailureCallback() throws Exception {
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        try {
+            AtomicReference<Throwable> seen = new AtomicReference<>();
+            CountDownLatch latch = new CountDownLatch(1);
+            RuntimeException boom = new RuntimeException("boom");
+
+            JdbcBridgeVerticle.dispatch(executor,
+                    () -> { throw boom; },
+                    t -> { seen.set(t); latch.countDown(); });
+
+            assertTrue(latch.await(5, TimeUnit.SECONDS), "failure callback did not fire");
+            assertSame(seen.get(), boom, "failure callback received the wrong throwable");
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    @Test(groups = { "unit" })
+    public void dispatch_swallowsThrowableSoExecutorStaysAlive() throws Exception {
+        // The handler contract is "exceptions go to ctx.fail" — they must NOT
+        // escape into the executor (which would mark the task as failed and,
+        // for some executors, terminate the worker). A failing task must be
+        // followed by a successful task on the same executor.
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        try {
+            CountDownLatch failLatch = new CountDownLatch(1);
+            CountDownLatch okLatch = new CountDownLatch(1);
+
+            JdbcBridgeVerticle.dispatch(executor,
+                    () -> { throw new RuntimeException("first task explodes"); },
+                    t -> failLatch.countDown());
+            assertTrue(failLatch.await(5, TimeUnit.SECONDS));
+
+            JdbcBridgeVerticle.dispatch(executor, okLatch::countDown, t -> {});
+            assertTrue(okLatch.await(5, TimeUnit.SECONDS),
+                    "second task did not run — executor was killed by an escaped exception");
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    @Test(groups = { "unit" })
+    public void virtualThreadExecutorFactory_producesNamedVirtualThreads() throws Exception {
+        ExecutorService executor = JdbcBridgeVerticle.VIRTUAL_THREAD_EXECUTOR_FACTORY.get();
+        try {
+            AtomicReference<Boolean> isVirtual = new AtomicReference<>();
+            AtomicReference<String> threadName = new AtomicReference<>();
+            CountDownLatch latch = new CountDownLatch(1);
+
+            executor.execute(() -> {
+                Thread t = Thread.currentThread();
+                isVirtual.set(t.isVirtual());
+                threadName.set(t.getName());
+                latch.countDown();
+            });
+
+            assertTrue(latch.await(5, TimeUnit.SECONDS));
+            assertTrue(isVirtual.get(), "factory must mint virtual threads");
+            assertTrue(threadName.get().startsWith("jdbc-bridge-vt-"),
+                    "thread name should be prefixed for grep-ability in JFR / thread dumps, got: "
+                            + threadName.get());
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    @Test(groups = { "unit" })
+    public void constructorAcceptsNullExecutor_forBlockingHandlerPath() {
+        // The package-private ctor takes null to model the "VT off" default
+        // (USE_VIRTUAL_THREADS=false). Construction must not blow up — the
+        // null is later checked in startServer to route through blockingHandler.
+        JdbcBridgeVerticle vert = new JdbcBridgeVerticle((ExecutorService) null);
+        assertNotNull(vert);
     }
 }

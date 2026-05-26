@@ -25,6 +25,7 @@ import java.util.Objects;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.function.Consumer;
+import java.util.function.Supplier;
 
 import com.clickhouse.jdbcbridge.core.AdhocPolicy;
 import com.clickhouse.jdbcbridge.core.ByteBuffer;
@@ -91,12 +92,10 @@ public class JdbcBridgeVerticle extends AbstractVerticle implements ExtensionMan
     // Toggle: dispatch the blocking JDBC handlers onto a virtual-thread executor
     // instead of the Vert.x worker pool. Set via env VIRTUAL_THREADS=true or
     // -Djdbc-bridge.virtual.threads=true. Requires JDK 21+ (we target 25).
-    private static final boolean USE_VIRTUAL_THREADS = Boolean
+    static final boolean USE_VIRTUAL_THREADS = Boolean
             .valueOf(Utils.getConfiguration("false", "VIRTUAL_THREADS", "jdbc-bridge.virtual.threads"));
-    private static final ExecutorService VIRTUAL_THREAD_EXECUTOR = USE_VIRTUAL_THREADS
-            ? Executors.newThreadPerTaskExecutor(
-                    Thread.ofVirtual().name("jdbc-bridge-vt-", 0).factory())
-            : null;
+    static final Supplier<ExecutorService> VIRTUAL_THREAD_EXECUTOR_FACTORY = () -> Executors
+            .newThreadPerTaskExecutor(Thread.ofVirtual().name("jdbc-bridge-vt-", 0).factory());
 
     private static final int DEFAULT_SERVER_PORT = 9019;
 
@@ -120,6 +119,12 @@ public class JdbcBridgeVerticle extends AbstractVerticle implements ExtensionMan
     private AdhocPolicy adhocPolicy = AdhocPolicy.fromEnvironment();
 
     private long scanInterval = 5000L;
+
+    // Non-null iff the bridge is configured to dispatch /query and /write onto
+    // virtual threads. Held as an instance field rather than a static so that
+    // tests can construct a verticle with their own executor (or null) without
+    // touching the static VIRTUAL_THREADS toggle.
+    private final ExecutorService virtualThreadExecutor;
 
     List<Repository<?>> loadRepositories(JsonObject serverConfig) {
         List<Repository<?>> repos = new ArrayList<>();
@@ -222,11 +227,18 @@ public class JdbcBridgeVerticle extends AbstractVerticle implements ExtensionMan
     }
 
     public JdbcBridgeVerticle() {
+        this(USE_VIRTUAL_THREADS ? VIRTUAL_THREAD_EXECUTOR_FACTORY.get() : null);
+    }
+
+    // Package-private: tests inject a custom executor (or null to exercise the
+    // platform-thread / blockingHandler path) without flipping the global static
+    // toggle.
+    JdbcBridgeVerticle(ExecutorService virtualThreadExecutor) {
         super();
 
         this.extensions = new ArrayList<>();
-
         this.repos = Utils.loadService(RepositoryManager.class);
+        this.virtualThreadExecutor = virtualThreadExecutor;
     }
 
     @Override
@@ -288,7 +300,7 @@ public class JdbcBridgeVerticle extends AbstractVerticle implements ExtensionMan
                 .handler(this::handleIdentifierQuote);
         router.post("/columns_info").produces(RESPONSE_CONTENT_TYPE).handler(queryTimeoutHandler)
                 .handler(this::handleColumnsInfo);
-        if (USE_VIRTUAL_THREADS) {
+        if (virtualThreadExecutor != null) {
             log.info("Virtual threads ENABLED — query/write handlers dispatched to virtual-thread executor");
             router.post("/").produces(RESPONSE_CONTENT_TYPE).handler(queryTimeoutHandler)
                     .handler(ctx -> dispatchOnVirtualThread(ctx, this::handleQuery));
@@ -315,13 +327,20 @@ public class JdbcBridgeVerticle extends AbstractVerticle implements ExtensionMan
     // Runs `handler` on a virtual thread. Matches Vert.x's blockingHandler
     // contract w.r.t. exceptions: any throwable is funneled into ctx.fail so the
     // configured failureHandler (errorHandler) writes the 5xx response.
-    private void dispatchOnVirtualThread(RoutingContext ctx,
+    void dispatchOnVirtualThread(RoutingContext ctx,
             io.vertx.core.Handler<RoutingContext> handler) {
-        VIRTUAL_THREAD_EXECUTOR.execute(() -> {
+        dispatch(virtualThreadExecutor, () -> handler.handle(ctx), ctx::fail);
+    }
+
+    // Package-private static seam — exists so tests can verify the dispatch
+    // contract (runs the task on the supplied executor's thread, funnels any
+    // throwable to onFailure) without needing a RoutingContext.
+    static void dispatch(ExecutorService executor, Runnable task, Consumer<Throwable> onFailure) {
+        executor.execute(() -> {
             try {
-                handler.handle(ctx);
+                task.run();
             } catch (Throwable t) {
-                ctx.fail(t);
+                onFailure.accept(t);
             }
         });
     }
