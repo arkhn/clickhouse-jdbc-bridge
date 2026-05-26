@@ -1,3 +1,43 @@
+## [1.1.0](https://github.com/arkhn/clickhouse-jdbc-bridge/compare/v1.0.4...v1.1.0) (2026-05-26)
+
+### Bug Fixes
+
+* add intersystem jdbc driver to full packaging ([08bc0fe](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/08bc0feb543044f5217e21ba38dd40aad2c65c61))
+* **buffer:** throw on writeBigInteger overflow instead of silent corruption ([6f95fb8](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/6f95fb80fac49cba9d3fb4bf3f90f86ce2d5e83a))
+* documentation ([0f63be7](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/0f63be7a15333f0d549a7e063dad5eaf13972658))
+* **it:** extend testBridgeQueryReturnsBytes retry to empty-body case ([e74228c](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/e74228ca60ea4233db5f8de2223ab5b8c151dddc))
+* **it:** fork per IT class + use Oracle's default JDBC-handshake wait ([baafdb8](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/baafdb89b4cb6eba0ca2a94e52d4bddfa98e84d8))
+* **it:** keep PostgresIT smoke schema to basic types ([c458eeb](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/c458eebe0fb896fa94e4333eec97e63cf793139b)), closes [#5](https://github.com/arkhn/clickhouse-jdbc-bridge/issues/5)
+* **it:** require 2 consecutive successful warmup probes ([1346487](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/1346487e505a68236c9c9b9a22d1b6c9aa25d172)), closes [#5](https://github.com/arkhn/clickhouse-jdbc-bridge/issues/5)
+* **it:** retry-once on cold-call flake for /ping, /identifier_quote, /schema_allowed ([bd13794](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/bd137947cf628e6266ce98a6aed7caad604c2c90))
+* **it:** retry-once on cold-call flake in error-path columns_info test ([82c2ac3](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/82c2ac32af216d2e1e455c00fdc43517da30fa75))
+* **it:** warm up the datasource before tests + remove Oracle commit() ([fdceef4](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/fdceef407d7259200110ad9df2a67fe088cb13e1))
+* **it:** warmup must check 200 status, not just non-empty body ([9234537](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/923453756344355f58807eed2e9cd498c8c9a33d))
+* **it:** widen bridge POST timeouts + retry first MsSqlIT smoke once ([3c411d4](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/3c411d4fe64f0cdebc1999026d5a87b96b63d448))
+* **jdbc:** apply Oracle EngineDefaults to the legacy driver class too ([0bdf3ca](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/0bdf3ca39445c8c7f9609160c802577afa8ec009))
+* **jdbc:** serialize HikariCP init to remove thread-safety FIXME ([120a6fa](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/120a6facfc20dae4222298f98fee82696b5e82ff))
+* **jdbc:** stop hardcoding connectionTestQuery=SELECT 1 for every datasource ([c80479e](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/c80479e5eb1575c6dc01a0c82f76599fda75610b))
+* **jmh:** use full Apache 2.0 license header on ByteBufferBench ([328f513](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/328f513ad230b945eb231676b1224f0c245a4be8))
+* **parser:** handle dotted schema names in extractSchemaName ([002210b](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/002210bb62e628cf890c3bdaf28f2624c40d264b))
+* **reader:** correct OFFSET off-by-one in DataTableReader.process ([ec983cd](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/ec983cd90bc875959b53e440a7830b548cee0367))
+* **streaming:** enforce write-queue backpressure in DataTableReader ([67ff93a](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/67ff93a0808493d724d1163e48d343f3e5591d83))
+* **types:** map SQL Server DATETIMEOFFSET + Oracle BINARY_FLOAT/DOUBLE ([cb73d94](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/cb73d94ce2e6b9e8fd612caa55b4fe202e69c392))
+* **verticle:** unknown datasource returns 404, not 500 ([72aef01](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/72aef011bf9ac07df5982aef98cb8f60c9c96470))
+
+### Features
+
+* **bench:** add end-to-end perf benchmark suite under misc/bench ([aa5dc74](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/aa5dc74f9233f87c24a3777484ca11bc22d8d21b))
+* **bench:** add HikariCP observability panels to Grafana dashboard ([132ef4b](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/132ef4bb2b15121688e9952942f56a6091f31703))
+* **jdbc:** per-driver connectionTestQuery defaults + 404 for unknown datasource ([5f3fbad](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/5f3fbadea75ef4baa0518c43937e97732bbaeb20))
+* **jdbc:** per-driver engine defaults applied at datasource load ([14b4336](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/14b43369a2c44f4c0d978a0e3b5e7760970043d9))
+* remove features impact badly security posture ([6018052](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/6018052042dd07313031833719bf542e0117304a))
+* **security:** reject adhoc JDBC URLs in inbound requests by default ([ea7f679](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/ea7f679ada125ec6a768ce4169e8b8a27e284fbf))
+
+### Performance Improvements
+
+* **streaming:** hoist nullability + adaptive ByteBuffer size hint ([04d56c9](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/04d56c95b9995d67d03d1e5b657a9256b87df8c0)), closes [#1](https://github.com/arkhn/clickhouse-jdbc-bridge/issues/1)
+* **streaming:** raise default batch_size to 4096 and fetch_size to 16384 ([a2fa4ae](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/a2fa4ae8882868eaf2c3bc5fc37ad40477dc6505))
+
 ## [1.1.0-rc.11](https://github.com/arkhn/clickhouse-jdbc-bridge/compare/v1.1.0-rc.10...v1.1.0-rc.11) (2026-05-22)
 
 ### Bug Fixes
