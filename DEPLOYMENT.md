@@ -102,18 +102,6 @@ The mssql `selectMethod=cursor` default is conditional on `Driver.getMajorVersio
 older mssql-jdbc parses the property differently. If we can't determine the version
 (driver not on classpath), `selectMethod` is omitted; the other mssql defaults still apply.
 
-In addition to the connection properties above, Oracle datasources get a
-**statement-level `fetch_size` default of 2000** (see [Per-request knobs](#per-request-knobs)).
-This is distinct from `oracle.jdbc.defaultRowPrefetch`: the bridge calls
-`Statement.setFetchSize(...)` on every read, and that call *overrides* the
-`defaultRowPrefetch` connection property — so without a matching statement-level
-default the prefetch tuning would be silently lost and Oracle would fall back to
-the compiled `fetch_size=16384`. Because the Oracle thin driver pre-allocates
-client-side fetch buffers as `fetch_size × max-column-width`, a high fetch size on
-wide rows (e.g. `VARCHAR2(4000)`/CLOB) is a real OOM hazard; 2000 keeps the buffer
-bounded while still avoiding the round-trip-per-row default. Set `fetch_size`
-explicitly (datasource `parameters` or request URI) to override.
-
 Real-world impact measured by `misc/bench`:
 
 - **Oracle W5 batch=100 c=4**: p99 dropped from **6.35 s → 9 ms** (700× faster)
@@ -126,32 +114,31 @@ Real-world impact measured by `misc/bench`:
 
 These can be set in three places, in increasing precedence:
 
-1. **Compiled default** — in `QueryParameters.java`.
-2. **Engine default** — per-driver, applied only when the operator left the knob
-   unset (currently: Oracle `fetch_size = 2000`).
-3. **Datasource config** — a `parameters` block in the datasource JSON, e.g.
+1. **Compiled default** — the single default for every driver, in `QueryParameters.java`.
+2. **Datasource config** — a `parameters` block in the datasource JSON, e.g.
    `"parameters": { "fetch_size": 2000 }`. Applies to every query against that
    datasource.
-4. **Per-request URL** — `'mssql?batch_size=X&fetch_size=Y&max_block_size=Z'`.
+3. **Per-request URL** — `'mssql?batch_size=X&fetch_size=Y&max_block_size=Z'`.
    Wins over everything.
 
 A value set at a higher-precedence layer is *not* clobbered by a lower layer's
 default: a datasource-level `fetch_size` survives requests that don't mention it,
-and the engine default only applies when neither datasource config nor the request
-set the knob.
+and the compiled default only applies when neither datasource config nor the
+request set the knob.
 
 | param | default | grid sweet spot | when to override |
 |---|---|---|---|
 | `batch_size` | 4096 | 16384 | flat plateau between 4096–65535; default is fine |
-| `fetch_size` | 16384 (Oracle: 2000) | 4096 | **memory-tight pods / wide rows**: lower saves heap at same QPS |
+| `fetch_size` | 16384 | 4096 | **memory-tight pods / wide rows**: lower saves heap at same QPS |
 | `max_block_size` | 65535 | 65535 | leave alone |
 
 The compiled default `fetch_size=16384` is kept higher than the grid's
 memory-optimal pick because lower fetch_size means more JDBC round-trips —
 which matters on real x86 hardware (this grid was upstream-bound on emulated
-SQL Server, so fetch_size didn't visibly cost throughput). Oracle is the
-exception: its driver pre-allocates fetch buffers as `fetch_size × column-width`,
-so it defaults to the lower, prefetch-aligned 2000.
+SQL Server, so fetch_size didn't visibly cost throughput). On memory-tight pods
+or wide rows (e.g. Oracle `VARCHAR2(4000)`/CLOB, where the thin driver
+pre-allocates fetch buffers as `fetch_size × column-width`), lower it per
+datasource via the `parameters` block.
 
 ## Sizing heuristic
 

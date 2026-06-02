@@ -195,20 +195,6 @@ public class QueryParameters {
         return this.fetchSize.getValue();
     }
 
-    /**
-     * Whether the named parameter was set explicitly (via datasource config or the
-     * request URI) rather than left at its compiled default. Used by datasources to
-     * decide whether an engine-specific default (e.g. Oracle's lower fetch size)
-     * should apply, without overriding an operator's explicit choice.
-     *
-     * @param name parameter name, e.g. {@link #PARAM_FETCH_SIZE}
-     * @return {@code true} only if the parameter exists and was explicitly set
-     */
-    public boolean isExplicitlySet(String name) {
-        TypedParameter<?> p = this.params.get(name);
-        return p != null && p.isExplicitlySet();
-    }
-
     public int getMaxRows() {
         return this.maxRows.getValue();
     }

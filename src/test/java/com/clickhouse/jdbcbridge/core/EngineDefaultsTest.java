@@ -405,22 +405,4 @@ public class EngineDefaultsTest {
                 "jdbc:oracle:thin:@//h:1521/SVC?oracleXjdbcXdefaultRowPrefetch=500",
                 "oracle.jdbc.defaultRowPrefetch"));
     }
-
-    // ---------- statement-level default fetch size ----------
-
-    @Test(groups = { "unit" })
-    public void testDefaultFetchSize_oracleIs2000_bothDriverClasses() {
-        assertEquals(EngineDefaults.defaultFetchSize(EngineDefaults.DRIVER_ORACLE), Integer.valueOf(2000));
-        assertEquals(EngineDefaults.defaultFetchSize(EngineDefaults.DRIVER_ORACLE_LEGACY), Integer.valueOf(2000));
-    }
-
-    @Test(groups = { "unit" })
-    public void testDefaultFetchSize_unknownDriversReturnNull() {
-        // No engine override -> caller keeps the compiled QueryParameters default.
-        assertNull(EngineDefaults.defaultFetchSize(EngineDefaults.DRIVER_MSSQL));
-        assertNull(EngineDefaults.defaultFetchSize(EngineDefaults.DRIVER_POSTGRES));
-        assertNull(EngineDefaults.defaultFetchSize(EngineDefaults.DRIVER_MYSQL));
-        assertNull(EngineDefaults.defaultFetchSize("com.example.UnknownDriver"));
-        assertNull(EngineDefaults.defaultFetchSize(null));
-    }
 }
