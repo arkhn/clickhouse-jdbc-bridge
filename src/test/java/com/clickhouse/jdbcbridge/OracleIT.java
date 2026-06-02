@@ -94,8 +94,17 @@ public class OracleIT extends AbstractBridgeIT {
     @org.testng.annotations.Test(groups = { "sit" })
     public void testOracleDatePreservesTimeComponent() throws Exception {
         // Verify the raw JDBC value has a time component (sanity check on test data).
-        try (Connection conn = java.sql.DriverManager.getConnection(
-                dbContainer.getJdbcUrl(), dbContainer.getUsername(), dbContainer.getPassword());
+        // Connect via a directly-instantiated driver instead of DriverManager: by the time
+        // this test runs the bridge has already initialised the Oracle datasource, which
+        // (with the default CUSTOM_DRIVER_LOADER=true) deregisters the Oracle driver from
+        // the global DriverManager — so DriverManager.getConnection (and Testcontainers'
+        // createConnection, which delegates to it) would fail with "No suitable driver found".
+        java.util.Properties connProps = new java.util.Properties();
+        connProps.setProperty("user", dbContainer.getUsername());
+        connProps.setProperty("password", dbContainer.getPassword());
+        java.sql.Driver oracleDriver = (java.sql.Driver) Class.forName(dbContainer.getDriverClassName())
+                .getDeclaredConstructor().newInstance();
+        try (Connection conn = oracleDriver.connect(dbContainer.getJdbcUrl(), connProps);
              Statement s = conn.createStatement();
              ResultSet rs = s.executeQuery("SELECT datewithtime FROM test_table WHERE id = 1")) {
             assertTrue(rs.next());
