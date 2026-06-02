@@ -304,8 +304,8 @@
       "type": "object",
       "properties": {
         "fetch_size": {
-          "default": 1000,
-          "description": "JDBC fetch size, defaults to 1000.",
+          "default": 16384,
+          "description": "JDBC statement fetch size (Statement.setFetchSize). When not set here or on the request, defaults to 2000 for Oracle drivers and 16384 otherwise. Lower this on memory-tight pods or wide rows: the Oracle thin driver pre-allocates client buffers as fetch_size x max column width.",
           "type": "integer"
         },
         "max_rows": {

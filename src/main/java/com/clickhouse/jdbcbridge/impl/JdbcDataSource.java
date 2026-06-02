@@ -362,6 +362,11 @@ public class JdbcDataSource extends NamedDataSource {
     private final String jdbcUrl;
     private final HikariDataSource datasource;
 
+    // Resolved JDBC driver class name, used to apply engine-specific defaults
+    // (e.g. Oracle's lower fetch size). Null for adhoc connections or when only a
+    // jdbcUrl was given and HikariCP resolved the driver itself.
+    private String driverClassName = null;
+
     // cached identifier quote
     private String quoteIdentifier = null;
 
@@ -527,6 +532,8 @@ public class JdbcDataSource extends NamedDataSource {
                     log.debug("Found driver: {}", driverClassName);
                 }
 
+                this.driverClassName = driverClassName;
+
                 // HikariCP looks the driver class up via the calling thread's
                 // context classloader, so we must swap our per-datasource
                 // ExpandedUrlClassLoader in for the duration of the init. The
@@ -565,6 +572,7 @@ public class JdbcDataSource extends NamedDataSource {
                     HikariConfig conf = new HikariConfig(filterHikariProps(props, id));
                     EngineDefaults.applyTo(conf);
                     conf.setMetricRegistry(Utils.getDefaultMetricRegistry());
+                    this.driverClassName = conf.getDriverClassName();
                     log.debug("Creating HikariDataSource for id={}", id);
                     this.datasource = new HikariDataSource(conf);
                     log.debug("HikariDataSource created successfully for id={}", id);
@@ -607,6 +615,27 @@ public class JdbcDataSource extends NamedDataSource {
         return createStatement(conn, null);
     }
 
+    /**
+     * Effective JDBC fetch size for a data query: the operator's explicit
+     * {@code fetch_size} (datasource config or request URI) when set, otherwise the
+     * engine default for this driver (e.g. 2000 for Oracle), otherwise the compiled
+     * {@link QueryParameters#DEFAULT_FETCH_SIZE}.
+     */
+    final int resolveFetchSize(QueryParameters parameters) {
+        return resolveFetchSize(this.driverClassName, parameters);
+    }
+
+    /** Pure decision behind {@link #resolveFetchSize(QueryParameters)}; package-private for testing. */
+    static int resolveFetchSize(String driverClassName, QueryParameters parameters) {
+        if (!parameters.isExplicitlySet(QueryParameters.PARAM_FETCH_SIZE)) {
+            Integer engineDefault = EngineDefaults.defaultFetchSize(driverClassName);
+            if (engineDefault != null) {
+                return engineDefault.intValue();
+            }
+        }
+        return parameters.getFetchSize();
+    }
+
     protected final Statement createStatement(Connection conn, QueryParameters parameters) throws SQLException {
         final Statement stmt;
 
@@ -617,7 +646,7 @@ public class JdbcDataSource extends NamedDataSource {
             stmt = conn.createStatement(scrollable ? ResultSet.TYPE_SCROLL_INSENSITIVE : ResultSet.TYPE_FORWARD_ONLY,
                     ResultSet.CONCUR_READ_ONLY);
 
-            stmt.setFetchSize(parameters.getFetchSize());
+            stmt.setFetchSize(resolveFetchSize(parameters));
             stmt.setMaxRows(parameters.getMaxRows());
         }
 

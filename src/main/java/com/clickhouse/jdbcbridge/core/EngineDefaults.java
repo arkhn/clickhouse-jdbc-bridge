@@ -82,6 +82,38 @@ public final class EngineDefaults {
     }
 
     /**
+     * Default statement-level {@code fetch_size} per driver, used only when the
+     * operator did not set {@code fetch_size} explicitly (datasource config or
+     * request URI).
+     *
+     * <p>Distinct from the connection-property defaults above: this is the value
+     * the bridge passes to {@link java.sql.Statement#setFetchSize(int)} on the data
+     * read path. For Oracle, {@code setFetchSize} overrides the
+     * {@code oracle.jdbc.defaultRowPrefetch} connection property, so the prefetch
+     * default of 2000 would otherwise be silently lost to the compiled bridge
+     * default of {@link QueryParameters#DEFAULT_FETCH_SIZE}. The Oracle thin driver
+     * pre-allocates client-side fetch buffers as {@code fetchSize × maxColumnWidth},
+     * so a large fetch size on wide rows is a real OOM hazard — hence the lower,
+     * prefetch-aligned default here.
+     */
+    private static final Map<String, Integer> DEFAULT_FETCH_SIZES;
+    static {
+        Map<String, Integer> m = new HashMap<>();
+        m.put(DRIVER_ORACLE,        2000);
+        m.put(DRIVER_ORACLE_LEGACY, 2000);
+        DEFAULT_FETCH_SIZES = Collections.unmodifiableMap(m);
+    }
+
+    /**
+     * The engine-specific default {@code fetch_size} for {@code driverClassName},
+     * or {@code null} if the driver has no override (callers should then keep the
+     * compiled {@link QueryParameters#DEFAULT_FETCH_SIZE}).
+     */
+    public static Integer defaultFetchSize(String driverClassName) {
+        return driverClassName == null ? null : DEFAULT_FETCH_SIZES.get(driverClassName);
+    }
+
+    /**
      * Pluggable driver-major-version provider, swappable in tests so we don't
      * need a real driver on the classpath to validate version-gated defaults.
      */
