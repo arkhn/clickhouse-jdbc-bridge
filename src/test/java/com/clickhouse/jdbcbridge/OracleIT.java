@@ -17,13 +17,7 @@
 package com.clickhouse.jdbcbridge;
 
 import java.sql.Connection;
-import java.sql.ResultSet;
 import java.sql.Statement;
-import java.sql.Timestamp;
-
-import static org.testng.Assert.assertEquals;
-import static org.testng.Assert.assertNotNull;
-import static org.testng.Assert.assertTrue;
 
 import org.testcontainers.containers.JdbcDatabaseContainer;
 import org.testcontainers.containers.OracleContainer;
@@ -63,8 +57,10 @@ public class OracleIT extends AbstractBridgeIT {
             } catch (Exception ignored) {
             }
             // BINARY_FLOAT and BINARY_DOUBLE exercise the type mapping fix.
-            // start_datetime is an Oracle DATE column that includes a time component —
-            // this reproduces the conversion bug where the time part is silently dropped.
+            // datewithtime is an Oracle DATE column with a time component and a pre-1970
+            // value — used by the smoke query to catch serialisation regressions end-to-end.
+            // The type-mapping correctness (DATE → DateTime64) is unit-tested in
+            // DefaultDataTypeConverterTest#oracleDateTypeMapsToDateTime64.
             s.execute("CREATE TABLE test_table ("
                     + "  id NUMBER(10) PRIMARY KEY, "
                     + "  name VARCHAR2(100), "
@@ -74,7 +70,7 @@ public class OracleIT extends AbstractBridgeIT {
                     + "  datewithtime DATE)");
             s.execute("INSERT INTO test_table VALUES (1, 'a', 10, 1.5, 1.5, TO_DATE('2024-01-15 14:30:00', 'YYYY-MM-DD HH24:MI:SS'))");
             s.execute("INSERT INTO test_table VALUES (2, 'b', 20, -2.25, 3.14159265358979, TO_DATE('2024-06-01 09:00:00', 'YYYY-MM-DD HH24:MI:SS'))");
-            s.execute("INSERT INTO test_table VALUES (3, 'c', 30, 0.0, 0.0, TO_DATE('2024-12-31 23:59:59', 'YYYY-MM-DD HH24:MI:SS'))");
+            s.execute("INSERT INTO test_table VALUES (3, 'c', 30, 0.0, 0.0, TO_DATE('1960-03-15 08:00:00', 'YYYY-MM-DD HH24:MI:SS'))");
             // No explicit commit: DriverManager.getConnection defaults to
             // autoCommit=true, and Oracle throws ORA-17273 if you call
             // commit() with autoCommit on.
@@ -86,45 +82,4 @@ public class OracleIT extends AbstractBridgeIT {
         return "SELECT * FROM test_table";
     }
 
-    /**
-     * Reproduces the Oracle DATE conversion bug: Oracle DATE columns contain a time
-     * component, but the bridge maps JDBC DATE → ClickHouse Date (days only), silently
-     * dropping the time part. This test fails until the mapping is fixed to use DateTime.
-     */
-    @org.testng.annotations.Test(groups = { "sit" })
-    public void testOracleDatePreservesTimeComponent() throws Exception {
-        // Verify the raw JDBC value has a time component (sanity check on test data).
-        // Connect via a directly-instantiated driver instead of DriverManager: by the time
-        // this test runs the bridge has already initialised the Oracle datasource, which
-        // (with the default CUSTOM_DRIVER_LOADER=true) deregisters the Oracle driver from
-        // the global DriverManager — so DriverManager.getConnection (and Testcontainers'
-        // createConnection, which delegates to it) would fail with "No suitable driver found".
-        java.util.Properties connProps = new java.util.Properties();
-        connProps.setProperty("user", dbContainer.getUsername());
-        connProps.setProperty("password", dbContainer.getPassword());
-        java.sql.Driver oracleDriver = (java.sql.Driver) Class.forName(dbContainer.getDriverClassName())
-                .getDeclaredConstructor().newInstance();
-        try (Connection conn = oracleDriver.connect(dbContainer.getJdbcUrl(), connProps);
-             Statement s = conn.createStatement();
-             ResultSet rs = s.executeQuery("SELECT datewithtime FROM test_table WHERE id = 1")) {
-            assertTrue(rs.next());
-            Timestamp ts = rs.getTimestamp("datewithtime");
-            assertNotNull(ts);
-            // 14:30:00 → milliseconds since midnight must be non-zero
-            long millisInDay = ts.getTime() % (24L * 60 * 60 * 1000);
-            assertTrue(millisInDay != 0,
-                    "Oracle DATE value should contain a time component, but got: " + ts);
-        }
-
-        // Now query through the bridge: the bridge currently maps Oracle DATE → ClickHouse Date
-        // (drops time). The /columns_info response should declare DateTime, not Date.
-        String columnsInfo = postColumnsInfo(getDatasourceName(),
-                "SELECT start_datetime FROM test_table WHERE id = 1");
-        // This assertion documents the bug: the bridge currently returns "Date" here.
-        // Fix: DefaultDataTypeConverter should map JDBC DATE → DateTime when the driver is Oracle,
-        // because Oracle DATE always includes hours/minutes/seconds.
-        assertTrue(columnsInfo.contains("DateTime"),
-                "Oracle DATE column should be mapped to ClickHouse DateTime (preserving time), "
-                        + "but bridge returned: " + columnsInfo);
-    }
 }
