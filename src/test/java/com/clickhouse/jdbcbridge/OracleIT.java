@@ -19,6 +19,8 @@ package com.clickhouse.jdbcbridge;
 import java.sql.Connection;
 import java.sql.Statement;
 
+import static org.testng.Assert.assertTrue;
+
 import org.testcontainers.containers.JdbcDatabaseContainer;
 import org.testcontainers.containers.OracleContainer;
 
@@ -80,6 +82,16 @@ public class OracleIT extends AbstractBridgeIT {
     @Override
     protected String smokeQuery() {
         return "SELECT * FROM test_table";
+    }
+
+    @org.testng.annotations.Test(groups = { "sit" })
+    public void testOracleDateColumnMapsToDateTime64() throws Exception {
+        // /columns_info must declare the column as DateTime64, not DateTime.
+        // DateTime (UInt32) cannot represent the pre-1970 value in the test data (1960-03-15).
+        String columnsInfo = postColumnsInfo(getDatasourceName(),
+                "SELECT datewithtime FROM test_table WHERE id = 3");
+        assertTrue(columnsInfo.contains("DateTime64"),
+                "Oracle DATE column must be mapped to DateTime64; bridge returned: " + columnsInfo);
     }
 
 }
