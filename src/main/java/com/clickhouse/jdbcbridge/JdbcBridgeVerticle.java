@@ -30,7 +30,9 @@ import com.clickhouse.jdbcbridge.core.ColumnDefinition;
 import com.clickhouse.jdbcbridge.core.DataType;
 import com.clickhouse.jdbcbridge.core.Extension;
 import com.clickhouse.jdbcbridge.core.ExtensionManager;
+import com.clickhouse.jdbcbridge.core.ConnectionTest;
 import com.clickhouse.jdbcbridge.core.NamedDataSource;
+import com.clickhouse.jdbcbridge.impl.JdbcDataSource;
 import com.clickhouse.jdbcbridge.core.NamedQuery;
 import com.clickhouse.jdbcbridge.core.NamedSchema;
 import com.clickhouse.jdbcbridge.core.QueryParameters;
@@ -281,6 +283,8 @@ public class JdbcBridgeVerticle extends AbstractVerticle implements ExtensionMan
                 SERIAL_MODE);
         router.post("/write").produces(RESPONSE_CONTENT_TYPE).handler(queryTimeoutHandler)
                 .blockingHandler(this::handleWrite, SERIAL_MODE);
+        router.post("/test").handler(queryTimeoutHandler)
+                .blockingHandler(this::handleTestConnection, SERIAL_MODE);
 
         log.info("Starting web server...");
         int port = bridgeServerConfig.getInteger("serverPort", DEFAULT_SERVER_PORT);
@@ -382,6 +386,48 @@ public class JdbcBridgeVerticle extends AbstractVerticle implements ExtensionMan
 
     private void handlePing(RoutingContext ctx) {
         ctx.response().end(PING_RESPONSE);
+    }
+
+    /**
+     * Test a datasource definition without saving it. The request body is a
+     * single datasource entity — the exact object stored as a value in
+     * config/datasources/datasources.json (the Vault secret) — so the caller
+     * sends what it is about to persist. Builds a transient datasource (reusing
+     * the same config / inline-CA / driver path as a named one), opens one
+     * connection, and returns {@code {ok, code, message}}. Always HTTP 200; the
+     * outcome is in the body. The raw driver exception is never returned.
+     */
+    private void handleTestConnection(RoutingContext ctx) {
+        JsonObject result = new JsonObject();
+        JdbcDataSource ds = null;
+        try {
+            JsonObject config = new JsonObject(ctx.getBodyAsString()).copy();
+            // Test-friendly overrides: a single connection, a bounded wait and
+            // fail-fast so an unreachable host doesn't hang the request. None of
+            // these change WHETHER the connection succeeds.
+            config.put("maximumPoolSize", 1);
+            if (!config.containsKey("connectionTimeout")) {
+                config.put("connectionTimeout", 8000);
+            }
+            config.put("initializationFailTimeout", 8000);
+            ds = (JdbcDataSource) JdbcDataSource.newInstance(
+                    "connection-test", getDataSourceRepository(), config);
+            ds.testConnection();
+            result.put("ok", true).put("code", "ok").put("message", "Connection successful.");
+        } catch (Throwable t) {
+            String code = ConnectionTest.classify(t);
+            log.info("Connection test failed: {}", code);
+            result.put("ok", false).put("code", code).put("message", ConnectionTest.message(code));
+        } finally {
+            if (ds != null) {
+                try {
+                    ds.close();
+                } catch (Exception ignore) {
+                    // best-effort teardown of the transient test datasource
+                }
+            }
+        }
+        ctx.response().putHeader("Content-Type", "application/json").end(result.encode());
     }
 
     private void handleSchemaAllowed(RoutingContext ctx) {

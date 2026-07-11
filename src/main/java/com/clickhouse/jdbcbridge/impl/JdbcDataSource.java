@@ -597,6 +597,20 @@ public class JdbcDataSource extends NamedDataSource {
         }
     }
 
+    /**
+     * Open a real connection from the pool and validate it. Used by the bridge's
+     * {@code POST /test} endpoint to check a datasource definition end-to-end
+     * (host, credentials, TLS + inline CA) before it is saved. Throws on any
+     * failure; the caller classifies the exception.
+     */
+    public void testConnection() throws SQLException {
+        try (Connection conn = getConnection()) {
+            if (!conn.isValid(5)) {
+                throw new SQLException("Connection validation failed");
+            }
+        }
+    }
+
     protected final Connection getConnection() throws SQLException {
         final Connection conn;
 
