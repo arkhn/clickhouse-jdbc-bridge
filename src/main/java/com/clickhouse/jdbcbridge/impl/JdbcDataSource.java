@@ -39,6 +39,7 @@ import java.util.Set;
 import java.util.Map.Entry;
 
 import com.clickhouse.jdbcbridge.core.ByteBuffer;
+import com.clickhouse.jdbcbridge.core.CaCertificateSupport;
 import com.clickhouse.jdbcbridge.core.ColumnDefinition;
 import com.clickhouse.jdbcbridge.core.DataAccessException;
 import com.clickhouse.jdbcbridge.core.DataTableReader;
@@ -454,11 +455,23 @@ public class JdbcDataSource extends NamedDataSource {
             this.datasource = null;
         } else { // named
             log.debug("Creating named datasource for id={}", id);
+            // Inline CA certificate (PEM) trusted for this datasource's TLS
+            // connection. Captured here and applied below so it never reaches
+            // HikariConfig as an unknown property.
+            String caCertificate = null;
             if (config != null) {
                 for (Entry<String, Object> field : config) {
                     String key = field.getKey();
 
                     if (PRIVATE_PROPS.contains(key)) {
+                        continue;
+                    }
+
+                    if (CaCertificateSupport.CONF_CA_CERTIFICATE.equals(key)) {
+                        Object caValue = field.getValue();
+                        if (caValue != null) {
+                            caCertificate = String.valueOf(caValue);
+                        }
                         continue;
                     }
 
@@ -507,6 +520,13 @@ public class JdbcDataSource extends NamedDataSource {
                 props.setProperty(PROP_INITIALIZATION_FAIL_TIMEOUT, "0");
             }
             props.setProperty(PROP_POOL_NAME, id);
+
+            // Trust an inline CA certificate for this datasource's TLS server
+            // (self-signed / private CA) by injecting the driver's root-cert /
+            // truststore connection property before HikariConfig is built.
+            if (caCertificate != null) {
+                CaCertificateSupport.apply(id, caCertificate, props.getProperty(CONF_JDBC_URL), props);
+            }
 
             this.jdbcUrl = null;
 
