@@ -398,20 +398,31 @@ public class JdbcBridgeVerticle extends AbstractVerticle implements ExtensionMan
      * outcome is in the body. The raw driver exception is never returned.
      */
     private void handleTestConnection(RoutingContext ctx) {
+        JsonObject config = new JsonObject(ctx.getBodyAsString());
+        JsonObject result = testDatasource(getDataSourceRepository(), config);
+        ctx.response().putHeader("Content-Type", "application/json").end(result.encode());
+    }
+
+    /**
+     * Build a transient datasource from {@code config} (a single datasource
+     * entity), open one connection and return {@code {ok, code, message}}. Pure
+     * logic extracted from {@link #handleTestConnection} so it can be tested
+     * without deploying an HttpServer. Never throws; a failure is classified.
+     */
+    static JsonObject testDatasource(Repository<NamedDataSource> repo, JsonObject config) {
         JsonObject result = new JsonObject();
         JdbcDataSource ds = null;
         try {
-            JsonObject config = new JsonObject(ctx.getBodyAsString()).copy();
+            JsonObject cfg = config.copy();
             // Test-friendly overrides: a single connection, a bounded wait and
             // fail-fast so an unreachable host doesn't hang the request. None of
             // these change WHETHER the connection succeeds.
-            config.put("maximumPoolSize", 1);
-            if (!config.containsKey("connectionTimeout")) {
-                config.put("connectionTimeout", 8000);
+            cfg.put("maximumPoolSize", 1);
+            if (!cfg.containsKey("connectionTimeout")) {
+                cfg.put("connectionTimeout", 8000);
             }
-            config.put("initializationFailTimeout", 8000);
-            ds = (JdbcDataSource) JdbcDataSource.newInstance(
-                    "connection-test", getDataSourceRepository(), config);
+            cfg.put("initializationFailTimeout", 8000);
+            ds = (JdbcDataSource) JdbcDataSource.newInstance("connection-test", repo, cfg);
             ds.testConnection();
             result.put("ok", true).put("code", "ok").put("message", "Connection successful.");
         } catch (Throwable t) {
@@ -427,7 +438,7 @@ public class JdbcBridgeVerticle extends AbstractVerticle implements ExtensionMan
                 }
             }
         }
-        ctx.response().putHeader("Content-Type", "application/json").end(result.encode());
+        return result;
     }
 
     private void handleSchemaAllowed(RoutingContext ctx) {
