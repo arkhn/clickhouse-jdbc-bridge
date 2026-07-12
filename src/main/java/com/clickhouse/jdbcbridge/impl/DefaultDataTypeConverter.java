@@ -119,8 +119,9 @@ public class DefaultDataTypeConverter implements DataTypeConverter {
             case TIMESTAMP:
             case TIME_WITH_TIMEZONE:
             case TIMESTAMP_WITH_TIMEZONE:
-                // type = useDateTime ? DataType.DateTime : DataType.DateTime64;
-                type = scale > 0 ? DataType.DateTime64 : DataType.DateTime;
+                // Always DateTime64: DateTime (UInt32) cannot represent pre-1970 dates
+                // and any JDBC source (Oracle, SQL Server, PostgreSQL...) can produce them.
+                type = DataType.DateTime64;
                 break;
             default:
                 log.warn("Unsupported JDBC type [{}], which will be treated as [{}]", jdbcType.name(), type.name());
