@@ -146,6 +146,15 @@ public abstract class AbstractBridgeIT {
                 ResponseAndBody r = rawPostQueryWithStatus(getDatasourceName(), query);
                 if (r.status == 200 && r.body != null && r.body.length() > 0) {
                     if (++consecutiveOk >= REQUIRED_OK) {
+                        // The query path (POST /) is hot. Now prime the DISTINCT
+                        // columns_info path (handleColumnsInfo -> type inference:
+                        // execute-with-maxRows=1 + ResultSetMetaData reads), which
+                        // POST / does not exercise. Without this the first real
+                        // columns_info @Test pays a cold JIT/parse cost that, under
+                        // CI load, has pushed a trivial Oracle inference past the
+                        // client body timeout. Best-effort: the per-call retry in
+                        // postColumnsInfo covers anything this misses.
+                        warmupColumnsInfo(query);
                         log.info("[{}] Datasource ready after {} warmup attempt(s)",
                                 getDatasourceName(), attempt + 1);
                         return;
@@ -166,6 +175,35 @@ public abstract class AbstractBridgeIT {
             throw new IllegalStateException(msg + ", last error: " + lastEx, lastEx);
         }
         throw new IllegalStateException(msg);
+    }
+
+    /**
+     * Prime the {@code /columns_info} path once the query path is hot. Best-effort:
+     * a warm path here means the first columns_info @Test isn't the one paying the
+     * cold JIT/parse/metadata cost. Never fails the run — a miss is covered by the
+     * retry inside {@link #postColumnsInfo}.
+     */
+    private void warmupColumnsInfo(String query) {
+        for (int i = 0; i < 3; i++) {
+            try {
+                ResponseAndBody r = rawPostToPath("/columns_info", getDatasourceName(), query);
+                if (r.status == 200 && r.body != null && !r.body.isEmpty()) {
+                    log.info("[{}] columns_info path warmed", getDatasourceName());
+                    return;
+                }
+            } catch (Exception e) {
+                log.warn("[{}] columns_info warmup attempt {} failed: {}",
+                        getDatasourceName(), i + 1, e.toString());
+            }
+            try {
+                Thread.sleep(500);
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+        }
+        log.warn("[{}] columns_info warmup did not confirm; continuing (per-call retry covers it)",
+                getDatasourceName());
     }
 
     private static final class ResponseAndBody {
@@ -379,7 +417,15 @@ public abstract class AbstractBridgeIT {
      * path returns the wire-format declaration ClickHouse expects.
      */
     protected String postColumnsInfo(String connectionString, String tableOrSql) throws Exception {
-        ResponseAndBody r = rawPostToPath("/columns_info", connectionString, tableOrSql);
+        // Retry once on the cold-call flake. A first, un-warmed inference for a
+        // given query can, on a loaded CI runner, exceed the client body timeout
+        // (surfacing as a thrown TimeoutException) or return an empty body — this
+        // is what intermittently reddened OracleIT.testOracleDateColumnMapsToDateTime64.
+        // respWithRetry re-issues once on either symptom; the retry hits a now-warm
+        // path. Applied here (not just at the call site) so every subclass's
+        // columns_info assertion is covered, not only the base smoke test.
+        ResponseAndBody r = respWithRetry("/columns_info [" + tableOrSql + "]",
+                () -> rawPostToPath("/columns_info", connectionString, tableOrSql));
         assertEquals(r.status, 200,
                 "Expected 200 from /columns_info for [" + tableOrSql + "]; body=" + r.body);
         return r.body;
@@ -556,8 +602,8 @@ public abstract class AbstractBridgeIT {
     public void testBridgeColumnsInfo() throws Exception {
         // /columns_info HTTP shell — the resolveColumnsTableDef seam is unit-tested directly;
         // this IT covers the handler shell so codecov patch coverage doesn't stall ~50%.
-        String body = getWithRetry("/columns_info",
-                () -> postColumnsInfo(getDatasourceName(), smokeQuery()));
+        // postColumnsInfo retries on the cold-call flake internally.
+        String body = postColumnsInfo(getDatasourceName(), smokeQuery());
         assertNotNull(body);
         assertTrue(body.contains("columns format version"),
                 "expected /columns_info to return the columns-format header; got: " + body);
