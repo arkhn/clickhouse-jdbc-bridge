@@ -385,6 +385,10 @@
           "description": "This property sets the default authentication password used when obtaining Connections from the underlying driver.",
           "type": "string"
         },
+        "caCertificate": {
+          "description": "Inline PEM CA certificate trusted for this datasource's TLS connection (self-signed / private CA). Materialized to a temp file and passed to the driver as its root-cert / truststore property (sslrootcert for Postgres/ClickHouse, serverSslCert for MariaDB/MySQL, a PKCS12 trustStore for SQL Server). TLS must still be requested via the jdbcUrl.",
+          "type": "string"
+        },
         "autoCommit": {
           "default": true,
           "description": "This property controls the default auto-commit behavior of connections returned from the pool.",
