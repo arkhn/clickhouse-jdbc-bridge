@@ -80,6 +80,44 @@ public class ConnectionTestTest {
     }
 
     @Test(groups = { "unit" })
+    public void classify_tlsFromBareCertificateAndSpacedHandshake() {
+        // reaches the bare "certificate" operand (no pkix / no "sslhandshake" token)
+        assertEquals(ConnectionTest.classify(
+                new SQLException("server certificate was rejected by the client")), "tls");
+        // reaches the spaced "ssl handshake" operand (distinct from the token form)
+        assertEquals(ConnectionTest.classify(
+                new SQLException("Remote host terminated the SSL handshake")), "tls");
+    }
+
+    @Test(groups = { "unit" })
+    public void classify_hostFromNoRouteToHost() {
+        assertEquals(ConnectionTest.classify(new SQLException("No route to host")), "host");
+    }
+
+    @Test(groups = { "unit" })
+    public void classify_driverFromClassNotFoundAndNoDriver() {
+        // the exception's own class name carries the "classnotfound" token
+        assertEquals(ConnectionTest.classify(
+                new ClassNotFoundException("org.postgresql.Driver")), "driver");
+        assertEquals(ConnectionTest.classify(
+                new SQLException("no driver available for this url")), "driver");
+    }
+
+    @Test(groups = { "unit" })
+    public void classify_stopsOnSelfReferencingCause() {
+        // A cause chain that points at itself must terminate via the
+        // c.getCause() == c guard rather than loop forever. Java forbids
+        // initCause(this), so model the self-reference with an override.
+        Throwable selfCause = new RuntimeException("weird self-referential failure") {
+            @Override
+            public synchronized Throwable getCause() {
+                return this;
+            }
+        };
+        assertEquals(ConnectionTest.classify(selfCause), "generic");
+    }
+
+    @Test(groups = { "unit" })
     public void message_isNonEmptyForEveryCode_andSecretFree() {
         for (String code : new String[] { "ok", "auth", "host", "tls", "driver", "generic" }) {
             String msg = ConnectionTest.message(code);

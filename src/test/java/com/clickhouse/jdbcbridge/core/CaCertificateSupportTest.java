@@ -93,6 +93,22 @@ public class CaCertificateSupportTest {
     }
 
     @Test(groups = { "unit" })
+    public void mysql_setsServerSslCert() {
+        Properties p = new Properties();
+        CaCertificateSupport.apply("ds", PEM, "jdbc:mysql://h:3306/db", p);
+        assertNotNull(p.getProperty("dataSource.serverSslCert"));
+        assertNull(p.getProperty("dataSource.sslrootcert"));
+    }
+
+    @Test(groups = { "unit" })
+    public void nullJdbcUrl_isIgnoredNotThrown() {
+        Properties p = new Properties();
+        // a null jdbcUrl must not NPE; with no vendor detected nothing is injected.
+        CaCertificateSupport.apply("ds", PEM, null, p);
+        assertTrue(p.isEmpty());
+    }
+
+    @Test(groups = { "unit" })
     public void unsupportedVendor_isIgnored() {
         Properties p = new Properties();
         CaCertificateSupport.apply("ds", PEM, "jdbc:oracle:thin:@//h:1521/x", p);

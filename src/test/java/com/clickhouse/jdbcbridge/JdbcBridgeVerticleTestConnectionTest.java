@@ -84,12 +84,47 @@ public class JdbcBridgeVerticleTestConnectionTest {
         return new JsonFileRepository<>(NamedDataSource.class);
     }
 
+    // A real self-signed X.509 (EC P-256) certificate, PEM encoded.
+    private static final String PEM = """
+            -----BEGIN CERTIFICATE-----
+            MIIBgzCCASmgAwIBAgIUDFQOdTGyGASy4ldToGamGLAgzD8wCgYIKoZIzj0EAwIw
+            FzEVMBMGA1UEAwwMY2hqYi10ZXN0LWNhMB4XDTI2MDcxMTE4MTUwNVoXDTM2MDcw
+            ODE4MTUwNVowFzEVMBMGA1UEAwwMY2hqYi10ZXN0LWNhMFkwEwYHKoZIzj0CAQYI
+            KoZIzj0DAQcDQgAEeF1yjpJE2/hgg/0Dr0JI2nlAV4q/JC4FpxSft0VHVN44w2Q7
+            jwXr5Rqv9tjdFUok559HjPdTOXJAfI6si0wl/qNTMFEwHQYDVR0OBBYEFBPbhiIq
+            uKtExhrLG3n+Grt66wAbMB8GA1UdIwQYMBaAFBPbhiIquKtExhrLG3n+Grt66wAb
+            MA8GA1UdEwEB/wQFMAMBAf8wCgYIKoZIzj0EAwIDSAAwRQIgGI5azYK3muyn9dgw
+            iD2crcFTq+W+swodQ4Ius4FNjrUCIQDo0NQq1eLq+zGgYWsaq6nFv07ldjRYP9It
+            42R62sTMZQ==
+            -----END CERTIFICATE-----
+            """;
+
     private JsonObject entity(String username, String password) {
         return new JsonObject()
                 .put("driverClassName", "org.h2.Driver")
                 .put("jdbcUrl", jdbcUrl)
                 .put("username", username)
                 .put("password", password);
+    }
+
+    @Test(groups = { "unit" })
+    public void test_withInlineCaCertificate_isCapturedAndStillConnects() {
+        // Exercises the JdbcDataSource inline-CA capture path. H2 is not a TLS
+        // vendor, so CaCertificateSupport captures then ignores the cert; the
+        // datasource must still build and connect (ok=true).
+        JsonObject entity = entity("sa", "").put("caCertificate", PEM);
+        JsonObject result = JdbcBridgeVerticle.testDatasource(repo(), entity);
+        assertTrue(result.getBoolean("ok"), result.encode());
+        assertEquals(result.getString("code"), "ok");
+    }
+
+    @Test(groups = { "unit" })
+    public void test_honoursCallerSuppliedConnectionTimeout() {
+        // When the entity already carries connectionTimeout, testDatasource must
+        // leave it untouched (covers the containsKey short-circuit branch).
+        JsonObject entity = entity("sa", "").put("connectionTimeout", 5000);
+        JsonObject result = JdbcBridgeVerticle.testDatasource(repo(), entity);
+        assertTrue(result.getBoolean("ok"), result.encode());
     }
 
     @Test(groups = { "unit" })
