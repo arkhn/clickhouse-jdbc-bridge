@@ -75,15 +75,25 @@ jobs:
         uses: cycjimmy/semantic-release-action@v6
         with:
           dry_run: false
+          # Pin the whole toolchain. Unpinned, the action installs the latest
+          # semantic-release and (below) the latest conventional-changelog
+          # preset — which is how the 1.2.0 line shipped with EMPTY release
+          # notes: preset 10.x is incompatible with the release-notes-generator
+          # bundled in semantic-release 24 (generator 14), so commit-analyzer
+          # still bumped the version while the notes rendered blank.
+          semantic_version: 24.2.9
           # On workflow_dispatch (manual trigger), force the current branch to
           # be treated as a stable release branch. On regular pushes, fall
           # through to .releaserc.json — which makes master prerelease=rc.
           branches: ${{ github.event_name == 'workflow_dispatch' && github.ref_name || '' }}
+          # Pin conventional-changelog-conventionalcommits to the 9.x line:
+          # semantic-release@24 (release-notes-generator@14) needs preset 9.x,
+          # not 10.x. Matches arkhn/helm-charts. Bump these two in lockstep.
           extra_plugins: |
             @semantic-release/changelog
             @semantic-release/exec
             @semantic-release/git
-            conventional-changelog-conventionalcommits
+            conventional-changelog-conventionalcommits@9
         env:
           GITHUB_TOKEN: ${{ steps.generate_token.outputs.token }}
           GIT_AUTHOR_NAME: "${{ steps.generate_token.outputs.app-slug }}[bot]"

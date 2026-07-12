@@ -1,10 +1,54 @@
 ## [1.2.0](https://github.com/arkhn/clickhouse-jdbc-bridge/compare/v1.1.0...v1.2.0) (2026-07-12)
 
+
+### Bug Fixes
+
+* **bridge:** run /columns_info on a worker thread, not the event loop ([e796c73](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/e796c732911ae208937162079ace0de231a80e77))
+* **oracle:** date convertion ([b966241](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/b96624177f5448058e02ce3c2cdc177d9cdc4c9f))
+* **timestamp:** always convert to datetime64 ([8fbd91c](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/8fbd91c5a1f06047a886e56dfed9a22fd684e9f0))
+
+
+### Features
+
+* add failing test for datetime conversion ([ee3e436](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/ee3e43677719c9bb52c14a98b304ae4e4bf05a05))
+* add integration test ([55c701f](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/55c701f8d8327d412c15a4f6ecb4107e9fdacb44))
+* add POST /test to check a datasource before it is saved ([57b5fc6](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/57b5fc693cef40b491eec035f2e0ea04db23995f))
+* honor an inline per-datasource caCertificate for TLS trust ([c8a80ec](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/c8a80ec1c81057116d0043c0667802a78787d38a))
+* **jdbc:** make fetch_size configurable per datasource and propagate it correctly ([f3d352a](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/f3d352a74478c936c77440d3dc2207def00506e8))
+
 ## [1.2.0-rc.3](https://github.com/arkhn/clickhouse-jdbc-bridge/compare/v1.2.0-rc.2...v1.2.0-rc.3) (2026-07-12)
+
+
+### Bug Fixes
+
+* **bridge:** run /columns_info on a worker thread, not the event loop ([e796c73](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/e796c732911ae208937162079ace0de231a80e77))
+
+
+### Features
+
+* add POST /test to check a datasource before it is saved ([57b5fc6](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/57b5fc693cef40b491eec035f2e0ea04db23995f))
+* honor an inline per-datasource caCertificate for TLS trust ([c8a80ec](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/c8a80ec1c81057116d0043c0667802a78787d38a))
 
 ## [1.2.0-rc.2](https://github.com/arkhn/clickhouse-jdbc-bridge/compare/v1.2.0-rc.1...v1.2.0-rc.2) (2026-07-12)
 
+
+### Bug Fixes
+
+* **oracle:** date convertion ([b966241](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/b96624177f5448058e02ce3c2cdc177d9cdc4c9f))
+* **timestamp:** always convert to datetime64 ([8fbd91c](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/8fbd91c5a1f06047a886e56dfed9a22fd684e9f0))
+
+
+### Features
+
+* add failing test for datetime conversion ([ee3e436](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/ee3e43677719c9bb52c14a98b304ae4e4bf05a05))
+* add integration test ([55c701f](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/55c701f8d8327d412c15a4f6ecb4107e9fdacb44))
+
 ## [1.2.0-rc.1](https://github.com/arkhn/clickhouse-jdbc-bridge/compare/v1.1.0...v1.2.0-rc.1) (2026-07-12)
+
+
+### Features
+
+* **jdbc:** make fetch_size configurable per datasource and propagate it correctly ([f3d352a](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/f3d352a74478c936c77440d3dc2207def00506e8))
 
 ## [1.1.0](https://github.com/arkhn/clickhouse-jdbc-bridge/compare/v1.0.4...v1.1.0) (2026-05-26)
 
