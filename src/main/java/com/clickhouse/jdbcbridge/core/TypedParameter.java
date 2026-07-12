@@ -38,6 +38,20 @@ public class TypedParameter<T> {
 
     private T value;
 
+    /**
+     * Whether {@link #value} was set explicitly (from a config/URI/merge source)
+     * rather than left at {@link #defaultValue}. This is provenance, not identity:
+     * it is deliberately excluded from {@link #equals(Object)}/{@link #hashCode()}.
+     *
+     * <p>It exists so that layered merges (compiled default &lt; datasource config
+     * &lt; per-request URI) can tell a value that was actually specified apart from
+     * one that merely carries the compiled default. Without it, a per-request
+     * {@link QueryParameters} — which always carries the compiled default for every
+     * key not present in the URI — would clobber a datasource-level setting back to
+     * the compiled default on every query.
+     */
+    private boolean explicitlySet;
+
     public TypedParameter(Class<T> type, String name, T defaultValue) {
         this(type, null, name, defaultValue, defaultValue);
     }
@@ -81,10 +95,22 @@ public class TypedParameter<T> {
         }
 
         this.value = value;
+        // A constructed value that differs from the default counts as explicit
+        // (e.g. an alias/seed value); a value equal to the default does not.
+        this.explicitlySet = !Objects.equals(value, defaultValue);
     }
 
     public String getName() {
         return this.name;
+    }
+
+    /**
+     * @return {@code true} if this parameter's value was set explicitly (via a
+     *         merge from config/URI or a non-default constructed value), rather
+     *         than left at the compiled default.
+     */
+    public boolean isExplicitlySet() {
+        return this.explicitlySet;
     }
 
     public Class<T> getType() {
@@ -100,8 +126,12 @@ public class TypedParameter<T> {
     }
 
     public TypedParameter<T> merge(TypedParameter<T> p) {
-        if (p != null) {
+        // Only an explicitly-set source overrides us. A source still carrying its
+        // compiled default must not clobber a value we already set explicitly —
+        // this is what makes layered merges (default < datasource < request) work.
+        if (p != null && p.explicitlySet) {
             this.value = p.value;
+            this.explicitlySet = true;
         }
 
         return this;
@@ -137,6 +167,7 @@ public class TypedParameter<T> {
 
             if (newValue != null) {
                 this.value = newValue;
+                this.explicitlySet = true;
             }
         }
 
@@ -150,6 +181,7 @@ public class TypedParameter<T> {
     @SuppressWarnings("unchecked")
     public TypedParameter<T> merge(String v) {
         if (v != null) {
+            this.explicitlySet = true;
             if (this.type.isAssignableFrom(BigDecimal.class)) {
                 this.value = (T) BigDecimal.valueOf(Double.valueOf(v).doubleValue());
             } else if (this.type.isAssignableFrom(Double.class)) {
