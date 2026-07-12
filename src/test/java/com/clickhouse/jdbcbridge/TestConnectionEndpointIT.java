@@ -94,6 +94,36 @@ public class TestConnectionEndpointIT extends AbstractBridgeIT {
         assertEquals(r.getString("code"), "host");
     }
 
+    @Test(groups = { "sit" })
+    public void testEndpoint_dnsResolutionFailure() throws Exception {
+        // A host name that cannot resolve (.invalid is reserved by RFC 2606, so
+        // it never resolves) exercises the DNS-failure path end-to-end.
+        JsonObject e = new JsonObject()
+                .put("driverClassName", dbContainer.getDriverClassName())
+                .put("jdbcUrl", "jdbc:postgresql://no-such-host.invalid:5432/nope")
+                .put("username", "x")
+                .put("password", "y");
+        JsonObject r = postTest(e);
+        assertFalse(r.getBoolean("ok"), r.encode());
+        assertEquals(r.getString("code"), "host");
+    }
+
+    @Test(groups = { "sit" })
+    public void testEndpoint_connectTimeout() throws Exception {
+        // A routable-but-unresponsive address (TEST-NET-1, RFC 5737) never
+        // answers the TCP SYN, so the driver hits the connect timeout. A short
+        // connectionTimeout keeps the test fast; the outcome is still "host".
+        JsonObject e = new JsonObject()
+                .put("driverClassName", dbContainer.getDriverClassName())
+                .put("jdbcUrl", "jdbc:postgresql://192.0.2.1:5432/nope")
+                .put("username", "x")
+                .put("password", "y")
+                .put("connectionTimeout", 3000);
+        JsonObject r = postTest(e);
+        assertFalse(r.getBoolean("ok"), r.encode());
+        assertEquals(r.getString("code"), "host");
+    }
+
     /** The datasource entity as the admin builds it (and stores in Vault). */
     private JsonObject entity(String password) {
         return new JsonObject()

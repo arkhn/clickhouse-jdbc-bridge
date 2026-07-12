@@ -21,6 +21,7 @@ import static org.testng.Assert.assertFalse;
 import static org.testng.Assert.assertNotNull;
 
 import java.net.ConnectException;
+import java.net.SocketTimeoutException;
 import java.net.UnknownHostException;
 import java.sql.SQLException;
 
@@ -92,6 +93,32 @@ public class ConnectionTestTest {
     @Test(groups = { "unit" })
     public void classify_hostFromNoRouteToHost() {
         assertEquals(ConnectionTest.classify(new SQLException("No route to host")), "host");
+    }
+
+    @Test(groups = { "unit" })
+    public void classify_hostFromDnsResolutionFailure() {
+        // DNS failure: the host name does not resolve. The driver surfaces this
+        // as an UnknownHostException, usually buried under the pool/SQL wrappers.
+        assertEquals(ConnectionTest.classify(
+                new UnknownHostException("db.internal.invalid: Name or service not known")),
+                "host");
+        Throwable wrapped = new SQLException("Unable to connect to server",
+                new UnknownHostException("no-such-host.example"));
+        assertEquals(ConnectionTest.classify(wrapped), "host");
+    }
+
+    @Test(groups = { "unit" })
+    public void classify_hostFromConnectAndReadTimeouts() {
+        // Connect timeout (TCP SYN never answered) and socket read timeout both
+        // arrive as SocketTimeoutException with a "timed out" message.
+        assertEquals(ConnectionTest.classify(
+                new SocketTimeoutException("connect timed out")), "host");
+        assertEquals(ConnectionTest.classify(
+                new SocketTimeoutException("Read timed out")), "host");
+        // ...and the same wrapped in the JDBC/pool exception chain.
+        Throwable wrapped = new SQLException("could not establish connection",
+                new SocketTimeoutException("connect timed out"));
+        assertEquals(ConnectionTest.classify(wrapped), "host");
     }
 
     @Test(groups = { "unit" })
