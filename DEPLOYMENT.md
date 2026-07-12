@@ -112,20 +112,33 @@ Real-world impact measured by `misc/bench`:
 
 ## Per-request knobs
 
-Operators override these via the JDBC URL,
-`'mssql?batch_size=X&fetch_size=Y&max_block_size=Z'`. Compiled defaults are
-in `QueryParameters.java`.
+These can be set in three places, in increasing precedence:
+
+1. **Compiled default** — the single default for every driver, in `QueryParameters.java`.
+2. **Datasource config** — a `parameters` block in the datasource JSON, e.g.
+   `"parameters": { "fetch_size": 2000 }`. Applies to every query against that
+   datasource.
+3. **Per-request URL** — `'mssql?batch_size=X&fetch_size=Y&max_block_size=Z'`.
+   Wins over everything.
+
+A value set at a higher-precedence layer is *not* clobbered by a lower layer's
+default: a datasource-level `fetch_size` survives requests that don't mention it,
+and the compiled default only applies when neither datasource config nor the
+request set the knob.
 
 | param | default | grid sweet spot | when to override |
 |---|---|---|---|
 | `batch_size` | 4096 | 16384 | flat plateau between 4096–65535; default is fine |
-| `fetch_size` | 16384 | 4096 | **memory-tight pods**: 4096 saves ~10× heap at same QPS |
+| `fetch_size` | 16384 | 4096 | **memory-tight pods / wide rows**: lower saves heap at same QPS |
 | `max_block_size` | 65535 | 65535 | leave alone |
 
 The compiled default `fetch_size=16384` is kept higher than the grid's
 memory-optimal pick because lower fetch_size means more JDBC round-trips —
 which matters on real x86 hardware (this grid was upstream-bound on emulated
-SQL Server, so fetch_size didn't visibly cost throughput).
+SQL Server, so fetch_size didn't visibly cost throughput). On memory-tight pods
+or wide rows (e.g. Oracle `VARCHAR2(4000)`/CLOB, where the thin driver
+pre-allocates fetch buffers as `fetch_size × column-width`), lower it per
+datasource via the `parameters` block.
 
 ## Sizing heuristic
 

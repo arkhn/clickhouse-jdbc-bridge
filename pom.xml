@@ -4,7 +4,7 @@
     <groupId>com.clickhouse</groupId>
     <artifactId>clickhouse-jdbc-bridge</artifactId>
     <packaging>jar</packaging>
-    <version>1.1.0</version>
+    <version>1.2.0-rc.2</version>
     <name>ClickHouse JDBC Bridge</name>
     <url>https://github.com/ClickHouse/clickhouse-jdbc-bridge</url>
     <description>JDBC bridge for ClickHouse.</description>
@@ -22,7 +22,16 @@
         <java.version>25</java.version>
         <maven.compiler.source>25</maven.compiler.source>
         <maven.compiler.target>25</maven.compiler.target>
-        <testcontainers.version>1.19.8</testcontainers.version>
+        <testcontainers.version>1.21.3</testcontainers.version>
+        <!--
+          Docker Engine 25+ raised its MinAPIVersion (e.g. 29.x reports 1.40),
+          but the docker-java client bundled in Testcontainers falls back to
+          API v1.24 when it can't negotiate, which the engine rejects with
+          HTTP 400 ("Could not find a valid Docker environment"). Pinning
+          api.version to a value within the engine's [Min, Max] range fixes it.
+          Override with -Ddocker.api.version=... if your engine needs a different one.
+        -->
+        <docker.api.version>1.43</docker.api.version>
         <testng.version>7.9.0</testng.version>
         <main.basedir>${project.basedir}</main.basedir>
         <deploy-plugin.version>3.1.1</deploy-plugin.version>
@@ -626,6 +635,15 @@
                     <skipTests>${skipTests}</skipTests>
                     <skipITs>${skipITs}</skipITs>
                     <argLine>${failsafeArgLine}</argLine>
+                    <!--
+                      docker-java reads the target Docker API version from the
+                      `api.version` system property; without it, it falls back
+                      to v1.24 which modern engines reject (HTTP 400). See the
+                      docker.api.version property above.
+                    -->
+                    <systemPropertyVariables>
+                        <api.version>${docker.api.version}</api.version>
+                    </systemPropertyVariables>
                     <!--
                       One JVM per IT class. JdbcBridgeVerticle reads its
                       `jdbc-bridge.config.dir` system property in a static

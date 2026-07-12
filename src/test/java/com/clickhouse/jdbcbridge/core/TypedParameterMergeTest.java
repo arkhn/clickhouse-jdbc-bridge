@@ -123,6 +123,45 @@ public class TypedParameterMergeTest {
     }
 
     @Test(groups = { "unit" })
+    public void explicitlySet_tracksProvenanceAcrossMergeVariants() {
+        // 3-arg ctor: value == default -> implicit
+        TypedParameter<Integer> p = new TypedParameter<>(Integer.class, "n", 0);
+        assertFalse(p.isExplicitlySet());
+
+        // 4-arg ctor with value != default -> explicit (preserves legacy alias/seed semantics)
+        assertTrue(new TypedParameter<>(Integer.class, "n", 0, 99).isExplicitlySet());
+
+        // merge(String) marks explicit
+        p.merge("5");
+        assertTrue(p.isExplicitlySet());
+        assertEquals(p.getValue(), Integer.valueOf(5));
+
+        // merge(JsonObject) with the key present marks explicit; absent key is a no-op
+        TypedParameter<Integer> q = new TypedParameter<>(Integer.class, "n", 0);
+        q.merge(new JsonObject().put("other", 7));
+        assertFalse(q.isExplicitlySet());
+        q.merge(new JsonObject().put("n", 7));
+        assertTrue(q.isExplicitlySet());
+    }
+
+    @Test(groups = { "unit" })
+    public void mergeTypedParameter_onlyExplicitSourceOverrides() {
+        // implicit source must NOT clobber our value (the core propagation fix)
+        TypedParameter<Integer> target = new TypedParameter<>(Integer.class, "n", 0);
+        target.merge("2000");                       // explicit datasource-style value
+        TypedParameter<Integer> implicitSource = new TypedParameter<>(Integer.class, "n", 0); // compiled default
+        target.merge(implicitSource);
+        assertEquals(target.getValue(), Integer.valueOf(2000));
+        assertTrue(target.isExplicitlySet());
+
+        // explicit source DOES override
+        TypedParameter<Integer> explicitSource = new TypedParameter<>(Integer.class, "n", 0);
+        explicitSource.merge("512");
+        target.merge(explicitSource);
+        assertEquals(target.getValue(), Integer.valueOf(512));
+    }
+
+    @Test(groups = { "unit" })
     public void mergeString_BooleanBothCases() {
         TypedParameter<Boolean> p = new TypedParameter<>(Boolean.class, "x", false);
         p.merge("true");

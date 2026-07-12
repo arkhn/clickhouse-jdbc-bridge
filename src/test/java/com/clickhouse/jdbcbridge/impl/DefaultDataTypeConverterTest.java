@@ -101,14 +101,17 @@ public class DefaultDataTypeConverterTest {
         assertEquals(CONV.from(JDBCType.DATE, "date", 10, 0, true), DataType.Date);
     }
 
+
     @Test(groups = { "unit" })
-    public void timestampSwitchesOnScale() {
-        assertEquals(CONV.from(JDBCType.TIMESTAMP, "timestamp", 19, 0, true), DataType.DateTime);
+    public void timestampAlwaysMapsToDateTime64() {
+        // DateTime (UInt32) cannot represent pre-1970 dates — any JDBC source
+        // (Oracle, SQL Server, PostgreSQL...) can produce them. Always use DateTime64.
+        assertEquals(CONV.from(JDBCType.TIMESTAMP, "timestamp", 19, 0, true), DataType.DateTime64);
         assertEquals(CONV.from(JDBCType.TIMESTAMP, "timestamp(3)", 23, 3, true), DataType.DateTime64);
-        assertEquals(CONV.from(JDBCType.TIME, "time", 8, 0, true), DataType.DateTime);
-        assertEquals(CONV.from(JDBCType.TIME_WITH_TIMEZONE, "time", 8, 0, true), DataType.DateTime);
-        assertEquals(CONV.from(JDBCType.TIMESTAMP_WITH_TIMEZONE, "timestamptz", 23, 6, true),
-                DataType.DateTime64);
+        assertEquals(CONV.from(JDBCType.TIMESTAMP, "DATE", 7, 0, true), DataType.DateTime64);
+        assertEquals(CONV.from(JDBCType.TIME, "time", 8, 0, true), DataType.DateTime64);
+        assertEquals(CONV.from(JDBCType.TIME_WITH_TIMEZONE, "time", 8, 0, true), DataType.DateTime64);
+        assertEquals(CONV.from(JDBCType.TIMESTAMP_WITH_TIMEZONE, "timestamptz", 23, 6, true), DataType.DateTime64);
     }
 
     @Test(groups = { "unit" })

@@ -115,12 +115,21 @@ public class QueryParameters {
                 if (x == null) {
                     this.params.put(tp.getName(), tp);
                 } else if (x.getType() == tp.getType()) {
-                    x.merge(tp.getValue());
+                    // Merge through the TypedParameter overload (not the raw value) so
+                    // provenance is honoured: a source still carrying its compiled
+                    // default does not clobber a value we set explicitly. This is what
+                    // lets datasource-level parameters survive the per-request merge.
+                    mergeTyped(x, tp);
                 }
             }
         }
 
         return this;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <T> void mergeTyped(TypedParameter<?> target, TypedParameter<?> source) {
+        ((TypedParameter<T>) target).merge((TypedParameter<T>) source);
     }
 
     public QueryParameters merge(JsonObject p) {
@@ -137,7 +146,11 @@ public class QueryParameters {
 
             for (String name : names) {
                 String value = Objects.toString(p.getValue(name));
-                this.params.put(name, new TypedParameter<>(String.class, name, value, value));
+                // Extra (untyped) params only exist because the key was present in
+                // the source, so they are explicit by definition — merge(value) flags
+                // them as such, so a request-level extra still overrides a
+                // datasource-level one of the same name.
+                this.params.put(name, new TypedParameter<>(String.class, name, value).merge(value));
             }
         }
 
@@ -159,7 +172,8 @@ public class QueryParameters {
                     if (p != null) {
                         p.merge(value);
                     } else {
-                        this.params.put(key, new TypedParameter<String>(String.class, key, value, value));
+                        // Untyped URI param: explicit by definition (see merge(JsonObject)).
+                        this.params.put(key, new TypedParameter<String>(String.class, key, value).merge(value));
                     }
                 } else {
                     TypedParameter<?> p = this.params.get(param);

@@ -1,3 +1,7 @@
+## [1.2.0-rc.2](https://github.com/arkhn/clickhouse-jdbc-bridge/compare/v1.2.0-rc.1...v1.2.0-rc.2) (2026-07-12)
+
+## [1.2.0-rc.1](https://github.com/arkhn/clickhouse-jdbc-bridge/compare/v1.1.0...v1.2.0-rc.1) (2026-07-12)
+
 ## [1.1.0](https://github.com/arkhn/clickhouse-jdbc-bridge/compare/v1.0.4...v1.1.0) (2026-05-26)
 
 ### Bug Fixes
