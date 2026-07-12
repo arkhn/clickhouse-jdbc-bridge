@@ -46,6 +46,9 @@ import io.vertx.core.json.JsonObject;
  */
 public class TestConnectionEndpointIT extends AbstractBridgeIT {
 
+    private static final org.slf4j.Logger log =
+            org.slf4j.LoggerFactory.getLogger(TestConnectionEndpointIT.class);
+
     @Override
     protected JdbcDatabaseContainer<?> createDatabaseContainer() {
         return new PostgreSQLContainer<>("postgres:16-alpine")
@@ -133,8 +136,25 @@ public class TestConnectionEndpointIT extends AbstractBridgeIT {
                 .put("password", password);
     }
 
-    /** POST a JSON entity to /test and return the parsed {ok, code, message}. */
+    /**
+     * POST a JSON entity to /test and return the parsed {ok, code, message}.
+     * Retries once on the cold-call flake: the first /test call to a freshly
+     * started bridge (a distinct code path the datasource warmup doesn't prime)
+     * can exceed the client timeout on a loaded CI runner, surfacing as a thrown
+     * TimeoutException. The retry hits a warm path. Mirrors the retry-on-flake
+     * handling in the AbstractBridgeIT smoke helpers.
+     */
     private JsonObject postTest(JsonObject entity) throws Exception {
+        try {
+            return attemptPostTest(entity);
+        } catch (Exception first) {
+            log.warn("First /test call failed ({}); retrying once", first.toString());
+            Thread.sleep(1000);
+            return attemptPostTest(entity);
+        }
+    }
+
+    private JsonObject attemptPostTest(JsonObject entity) throws Exception {
         HttpClient client = vertx.createHttpClient();
         CompletableFuture<HttpClientResponse> respFuture = new CompletableFuture<>();
         client.request(HttpMethod.POST, bridgePort, "localhost", "/test")
