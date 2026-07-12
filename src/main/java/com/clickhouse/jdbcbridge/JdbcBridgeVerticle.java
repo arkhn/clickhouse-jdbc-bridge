@@ -277,8 +277,13 @@ public class JdbcBridgeVerticle extends AbstractVerticle implements ExtensionMan
 
         router.post("/identifier_quote").produces(RESPONSE_CONTENT_TYPE).handler(requestTimeoutHandler)
                 .handler(this::handleIdentifierQuote);
+        // columns_info runs blocking JDBC (type inference executes a query), so it
+        // must run on a worker thread like / and /write — not on the event loop.
+        // On the event loop a slow inference (e.g. Oracle's first hard-parse of a
+        // new query) blocks the loop itself, which also prevents queryTimeoutHandler's
+        // timer from ever firing, so the response stalls until the client times out.
         router.post("/columns_info").produces(RESPONSE_CONTENT_TYPE).handler(queryTimeoutHandler)
-                .handler(this::handleColumnsInfo);
+                .blockingHandler(this::handleColumnsInfo, SERIAL_MODE);
         router.post("/").produces(RESPONSE_CONTENT_TYPE).handler(queryTimeoutHandler).blockingHandler(this::handleQuery,
                 SERIAL_MODE);
         router.post("/write").produces(RESPONSE_CONTENT_TYPE).handler(queryTimeoutHandler)
