@@ -44,6 +44,8 @@ import java.util.Properties;
  *   <li>MariaDB / MySQL — {@code serverSslCert} (PEM path)</li>
  *   <li>SQL Server — {@code trustStore} + {@code trustStorePassword} +
  *       {@code trustStoreType=PKCS12} (a PKCS12 truststore built from the PEM)</li>
+ *   <li>Oracle (thin, TCPS) / InterSystems IRIS — the standard JSSE
+ *       {@code javax.net.ssl.trustStore} + password + {@code trustStoreType=PKCS12}</li>
  * </ul>
  *
  * TLS itself (sslmode/encrypt/ssl=…) is expected to already be requested via the
@@ -86,12 +88,18 @@ public final class CaCertificateSupport {
                 props.setProperty(DS_PREFIX + "serverSslCert", pemPath);
                 log.info("Datasource id={}: trusting inline CA via serverSslCert={}", id, pemPath);
             } else if (url.startsWith("jdbc:sqlserver")) {
-                char[] password = randomPassword();
-                String storePath = writeTrustStore(id, pem, password);
-                props.setProperty(DS_PREFIX + "trustStore", storePath);
-                props.setProperty(DS_PREFIX + "trustStorePassword", new String(password));
-                props.setProperty(DS_PREFIX + "trustStoreType", "PKCS12");
+                // mssql-jdbc's own trustStore* connection properties.
+                String storePath = injectPkcs12TrustStore(id, pem, props,
+                        "trustStore", "trustStorePassword", "trustStoreType");
                 log.info("Datasource id={}: trusting inline CA via trustStore={}", id, storePath);
+            } else if (url.startsWith("jdbc:oracle") || url.startsWith("jdbc:iris")) {
+                // Oracle thin (TCPS) and InterSystems IRIS both take the standard
+                // JSSE javax.net.ssl.trustStore* keys as connection properties.
+                String storePath = injectPkcs12TrustStore(id, pem, props,
+                        "javax.net.ssl.trustStore",
+                        "javax.net.ssl.trustStorePassword",
+                        "javax.net.ssl.trustStoreType");
+                log.info("Datasource id={}: trusting inline CA via javax.net.ssl.trustStore={}", id, storePath);
             } else {
                 log.warn("Datasource id={}: caCertificate is set but is not supported for jdbcUrl '{}'; "
                         + "the certificate was ignored.", id, jdbcUrl);
@@ -119,6 +127,21 @@ public final class CaCertificateSupport {
         file.deleteOnExit();
         Files.write(file.toPath(), pem.getBytes(StandardCharsets.UTF_8));
         return file.getAbsolutePath();
+    }
+
+    /**
+     * Build a PKCS12 truststore from {@code pem} and set the three
+     * {@code dataSource.<keyBase>} / password / type connection properties a
+     * JSSE-based driver reads. Returns the truststore path (for logging).
+     */
+    private static String injectPkcs12TrustStore(String id, String pem, Properties props,
+            String storeKey, String passwordKey, String typeKey) throws Exception {
+        char[] password = randomPassword();
+        String storePath = writeTrustStore(id, pem, password);
+        props.setProperty(DS_PREFIX + storeKey, storePath);
+        props.setProperty(DS_PREFIX + passwordKey, new String(password));
+        props.setProperty(DS_PREFIX + typeKey, "PKCS12");
+        return storePath;
     }
 
     private static String writeTrustStore(String id, String pem, char[] password) throws Exception {

@@ -109,10 +109,42 @@ public class CaCertificateSupportTest {
     }
 
     @Test(groups = { "unit" })
+    public void oracle_buildsJsseTrustStore() throws Exception {
+        Properties p = new Properties();
+        CaCertificateSupport.apply("ds", PEM, "jdbc:oracle:thin:@tcps://h:2484/svc", p);
+        assertPkcs12TrustStore(p, "dataSource.javax.net.ssl.trustStore",
+                "dataSource.javax.net.ssl.trustStorePassword");
+    }
+
+    @Test(groups = { "unit" })
+    public void iris_buildsJsseTrustStore() throws Exception {
+        Properties p = new Properties();
+        CaCertificateSupport.apply("ds", PEM, "jdbc:IRIS://h:1972/USER", p);
+        assertPkcs12TrustStore(p, "dataSource.javax.net.ssl.trustStore",
+                "dataSource.javax.net.ssl.trustStorePassword");
+    }
+
+    /** Assert a PKCS12 truststore was materialised and its keys wired into props. */
+    private static void assertPkcs12TrustStore(Properties p, String storeKey, String passwordKey)
+            throws Exception {
+        String store = p.getProperty(storeKey);
+        String pwd = p.getProperty(passwordKey);
+        assertNotNull(store, storeKey + " must be set");
+        assertNotNull(pwd);
+        assertFalse(pwd.isEmpty());
+        KeyStore ks = KeyStore.getInstance("PKCS12");
+        try (FileInputStream in = new FileInputStream(store)) {
+            ks.load(in, pwd.toCharArray());
+        }
+        assertTrue(ks.size() >= 1, "the CA must be present in the truststore");
+    }
+
+    @Test(groups = { "unit" })
     public void unsupportedVendor_isIgnored() {
         Properties p = new Properties();
-        CaCertificateSupport.apply("ds", PEM, "jdbc:oracle:thin:@//h:1521/x", p);
-        assertTrue(p.isEmpty(), "oracle is not supported — nothing must be injected");
+        // SQLite has no TLS/CA concept — a genuinely unsupported vendor.
+        CaCertificateSupport.apply("ds", PEM, "jdbc:sqlite:/tmp/x.db", p);
+        assertTrue(p.isEmpty(), "sqlite is not supported — nothing must be injected");
     }
 
     @Test(groups = { "unit" })
