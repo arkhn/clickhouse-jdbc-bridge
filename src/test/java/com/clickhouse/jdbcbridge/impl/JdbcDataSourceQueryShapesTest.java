@@ -16,6 +16,7 @@
  */
 package com.clickhouse.jdbcbridge.impl;
 
+import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertNotNull;
 import static org.testng.Assert.assertThrows;
 import static org.testng.Assert.assertTrue;
@@ -219,6 +220,35 @@ public class JdbcDataSourceQueryShapesTest {
             String quote = ds.getQuoteIdentifier();
             assertNotNull(quote);
             assertTrue(quote.length() > 0);
+        } finally {
+            ds.close();
+        }
+    }
+
+    @Test(groups = { "unit" })
+    public void inferTypes_bareTableQuery_doesNotDeadlockOnSingleConnectionPool() {
+        // Regression test: inferTypes() holds one pool connection for the whole
+        // "SELECT * FROM t WHERE 1=0" probe. Resolving the quote character used to
+        // call getQuoteIdentifier() (no connection reuse), which checked out a SECOND
+        // connection from the same pool. With maximumPoolSize=1 that second checkout
+        // can never succeed while the first is held, so it timed out after
+        // connectionTimeout and silently fell back to the backtick default -- which
+        // happens to still parse on H2, so asserting on the resolved quote character
+        // (not just "did it return columns") is what actually catches the deadlock.
+        JsonObject config = baseConfig().put("maximumPoolSize", 1).put("connectionTimeout", 2000);
+        JdbcDataSource ds = new JdbcDataSource("h2-single-conn-pool", repo(), config);
+        try {
+            // H2 folds the unquoted DDL table name to uppercase, and the bridge quotes
+            // whatever it's given verbatim -> must match H2's stored case exactly.
+            TableDefinition cols = ds.getResultColumns("", "ROWS_T", new QueryParameters());
+            assertTrue(cols.size() > 0,
+                    "bare-table inference against a size-1 pool must resolve columns without deadlocking");
+
+            String quote = ds.getQuoteIdentifier();
+            assertEquals(quote, "\"",
+                    "expected H2's real identifier quote (from driver metadata); got [" + quote
+                            + "] which means getQuoteIdentifier() timed out acquiring a second"
+                            + " pool connection and silently fell back to the backtick default");
         } finally {
             ds.close();
         }

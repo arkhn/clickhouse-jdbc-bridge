@@ -807,7 +807,7 @@ public class JdbcDataSource extends NamedDataSource {
             // in case it's a table query
             if (!Utils.containsWhitespace(loadedQuery)) {
                 // let's generate a query based on given schema name, table name and column list
-                String quote = this.getQuoteIdentifier();
+                String quote = this.getQuoteIdentifier(conn);
                 StringBuilder sb = new StringBuilder().append(QUERY_TABLE_BEGIN);
                 // add schema name if any
                 if (schema != null && !schema.isEmpty() && !Utils.containsWhitespace(schema)) {
@@ -818,7 +818,7 @@ public class JdbcDataSource extends NamedDataSource {
 
             if (loadedQuery != null && loadedQuery.indexOf(' ') == -1) {
                 StringBuilder sb = new StringBuilder().append(QUERY_TABLE_BEGIN);
-                String quote = this.getQuoteIdentifier();
+                String quote = this.getQuoteIdentifier(conn);
                 if (schema != null && schema.length() > 0) {
                     sb.append(quote).append(schema).append(quote).append('.');
                 }
@@ -1046,11 +1046,20 @@ public class JdbcDataSource extends NamedDataSource {
         return EXTENSION_NAME;
     }
 
-    @Override
-    public final String getQuoteIdentifier() {
-        this.initQuoteIdentifier(null);
+    // Lets callers that already hold a connection resolve the quote without a
+    // second pool checkout — initQuoteIdentifier(conn) reuses it directly. Going
+    // through the no-arg getQuoteIdentifier() here would call getConnection() again
+    // on the same thread, which self-deadlocks once the pool has no spare connection
+    // (e.g. maximumPoolSize reached, or the backend only tolerates one session).
+    protected final String getQuoteIdentifier(Connection conn) {
+        this.initQuoteIdentifier(conn);
 
         return this.quoteIdentifier;
+    }
+
+    @Override
+    public final String getQuoteIdentifier() {
+        return getQuoteIdentifier(null);
     }
 
     @Override
