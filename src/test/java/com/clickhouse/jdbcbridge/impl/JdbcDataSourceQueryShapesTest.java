@@ -253,4 +253,41 @@ public class JdbcDataSourceQueryShapesTest {
             ds.close();
         }
     }
+
+    @Test(groups = { "unit" })
+    public void writeQueryResult_bareTableQuery_resolvesQuoteWithoutExtraConnection() {
+        // Regression test: writeQueryResult() used to call the no-arg getQuoteIdentifier()
+        // before opening its own connection. With an uncached quote, that no-arg getter
+        // opens+closes its own connection just to read driver metadata, then
+        // writeQueryResult opens a SECOND one for the actual query -- two sequential
+        // connections instead of one. Harmless on fast local H2, but against a slow
+        // backend each extra connection is a full round-trip that can itself time out
+        // (broke jdbc('glims_PUB', "PUB", "Encounter") in production even after the
+        // inferTypes() fix, since /query hits writeQueryResult directly once
+        // ClickHouse's metadata cache is warm and /columns_info is skipped).
+        JdbcDataSource ds = new JdbcDataSource("h2-writequery-quote", repo(), baseConfig());
+        try {
+            ColumnDefinition idCol = new ColumnDefinition("ID", DataType.Int32, false,
+                    DataType.DEFAULT_LENGTH, DataType.DEFAULT_PRECISION, DataType.DEFAULT_SCALE);
+            TableDefinition cols = new TableDefinition(idCol);
+
+            Capture w = new Capture();
+            // quoteIdentifier is still null here -- first-ever resolution for this instance.
+            ds.executeQuery("", "ROWS_T", "ROWS_T", cols, new QueryParameters(), w);
+
+            // Use acquire count, not creation count: minimumIdle=1 pre-warms one physical
+            // connection at pool startup, so both the buggy (2 checkouts) and fixed (1
+            // checkout) code paths would reuse it without creating a NEW connection --
+            // creation count alone can't tell the two apart. Acquire count can.
+            JsonObject usage = new JsonObject(ds.getPoolUsage());
+            Double acquired = usage.getDouble("connections_acquire_count");
+            assertNotNull(acquired, "expected hikaricp.connections.acquire metric to be present: " + usage);
+            assertEquals(acquired, 1.0,
+                    "a single writeQueryResult() call with an uncached quote must check out exactly one"
+                            + " connection, not one to resolve the quote plus one to run the query; got "
+                            + usage);
+        } finally {
+            ds.close();
+        }
+    }
 }

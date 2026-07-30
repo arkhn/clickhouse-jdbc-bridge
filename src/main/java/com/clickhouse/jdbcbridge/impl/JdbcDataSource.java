@@ -862,31 +862,34 @@ public class JdbcDataSource extends NamedDataSource {
     protected void writeQueryResult(String schema, String originalQuery, String loadedQuery, QueryParameters params,
             ColumnDefinition[] requestColumns, ColumnDefinition[] customColumns, DefaultValues defaultValues,
             ResponseWriter writer) {
-        // check if it's a table query
-        if (!Utils.containsWhitespace(loadedQuery)) {
-            // let's generate a query based on given schema name, table name and column list
-            String quote = this.getQuoteIdentifier();
-            StringBuilder sb = new StringBuilder();
-            sb.append(QUERY_STMT_SELECT);
-            if (requestColumns == null || requestColumns.length == 0) {
-                sb.append('*');
-            } else {
-                for (ColumnDefinition c : requestColumns) {
-                    sb.append(quote).append(c.getName()).append(quote).append(',');
-                }
-                sb.deleteCharAt(sb.length() - 1);
-            }
-            sb.append(QUERY_STMT_FROM);
-            // add schema name if any
-            if (schema != null && !schema.isEmpty() && !Utils.containsWhitespace(schema)) {
-                sb.append(quote).append(schema).append(quote).append('.');
-            }
-            // now table name
-            sb.append(quote).append(loadedQuery).append(quote);
-            loadedQuery = sb.toString();
-        }
-
         try (Connection conn = getConnection(); Statement stmt = createStatement(conn, params)) {
+            // check if it's a table query
+            if (!Utils.containsWhitespace(loadedQuery)) {
+                // let's generate a query based on given schema name, table name and column list.
+                // Resolve the quote via this same conn (not the no-arg getter) so an
+                // uncached quote doesn't need its own separate connection checkout
+                // before the one already open here.
+                String quote = this.getQuoteIdentifier(conn);
+                StringBuilder sb = new StringBuilder();
+                sb.append(QUERY_STMT_SELECT);
+                if (requestColumns == null || requestColumns.length == 0) {
+                    sb.append('*');
+                } else {
+                    for (ColumnDefinition c : requestColumns) {
+                        sb.append(quote).append(c.getName()).append(quote).append(',');
+                    }
+                    sb.deleteCharAt(sb.length() - 1);
+                }
+                sb.append(QUERY_STMT_FROM);
+                // add schema name if any
+                if (schema != null && !schema.isEmpty() && !Utils.containsWhitespace(schema)) {
+                    sb.append(quote).append(schema).append(quote).append('.');
+                }
+                // now table name
+                sb.append(quote).append(loadedQuery).append(quote);
+                loadedQuery = sb.toString();
+            }
+
             setTimeout(stmt, this.getQueryTimeout(params.getTimeout()));
 
             final ResultSet rs = getFirstQueryResult(stmt, stmt.execute(loadedQuery));
