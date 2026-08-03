@@ -227,14 +227,8 @@ public class JdbcDataSourceQueryShapesTest {
 
     @Test(groups = { "unit" })
     public void inferTypes_bareTableQuery_doesNotDeadlockOnSingleConnectionPool() {
-        // Regression test: inferTypes() holds one pool connection for the whole
-        // "SELECT * FROM t WHERE 1=0" probe. Resolving the quote character used to
-        // call getQuoteIdentifier() (no connection reuse), which checked out a SECOND
-        // connection from the same pool. With maximumPoolSize=1 that second checkout
-        // can never succeed while the first is held, so it timed out after
-        // connectionTimeout and silently fell back to the backtick default -- which
-        // happens to still parse on H2, so asserting on the resolved quote character
-        // (not just "did it return columns") is what actually catches the deadlock.
+        // Regression test: Test that calling getQuoteIdentifier() doesn't fail by tring to open a second connection when MaximumSizePool=1 causing to fall back to the backtick quote default 
+
         JsonObject config = baseConfig().put("maximumPoolSize", 1).put("connectionTimeout", 2000);
         JdbcDataSource ds = new JdbcDataSource("h2-single-conn-pool", repo(), config);
         try {
@@ -256,15 +250,8 @@ public class JdbcDataSourceQueryShapesTest {
 
     @Test(groups = { "unit" })
     public void writeQueryResult_bareTableQuery_resolvesQuoteWithoutExtraConnection() {
-        // Regression test: writeQueryResult() used to call the no-arg getQuoteIdentifier()
-        // before opening its own connection. With an uncached quote, that no-arg getter
-        // opens+closes its own connection just to read driver metadata, then
-        // writeQueryResult opens a SECOND one for the actual query -- two sequential
-        // connections instead of one. Harmless on fast local H2, but against a slow
-        // backend each extra connection is a full round-trip that can itself time out
-        // (broke jdbc('glims_PUB', "PUB", "Encounter") in production even after the
-        // inferTypes() fix, since /query hits writeQueryResult directly once
-        // ClickHouse's metadata cache is warm and /columns_info is skipped).
+        // Regression test: verifying that writeQueryResult(), when the quote identifier isn't yet cached, checks out exactly one 
+        // connection instead of two (one to resolve the quote via the no-arg getQuoteIdentifier(), another for the actual query).
         JdbcDataSource ds = new JdbcDataSource("h2-writequery-quote", repo(), baseConfig());
         try {
             ColumnDefinition idCol = new ColumnDefinition("ID", DataType.Int32, false,
