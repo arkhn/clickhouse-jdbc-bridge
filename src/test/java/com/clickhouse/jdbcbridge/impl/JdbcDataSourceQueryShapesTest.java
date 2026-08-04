@@ -16,6 +16,7 @@
  */
 package com.clickhouse.jdbcbridge.impl;
 
+import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertNotNull;
 import static org.testng.Assert.assertThrows;
 import static org.testng.Assert.assertTrue;
@@ -219,6 +220,59 @@ public class JdbcDataSourceQueryShapesTest {
             String quote = ds.getQuoteIdentifier();
             assertNotNull(quote);
             assertTrue(quote.length() > 0);
+        } finally {
+            ds.close();
+        }
+    }
+
+    @Test(groups = { "unit" })
+    public void inferTypes_bareTableQuery_doesNotDeadlockOnSingleConnectionPool() {
+        // Regression test: Test that calling getQuoteIdentifier() doesn't fail by tring to open a second connection when MaximumSizePool=1 causing to fall back to the backtick quote default 
+
+        JsonObject config = baseConfig().put("maximumPoolSize", 1).put("connectionTimeout", 2000);
+        JdbcDataSource ds = new JdbcDataSource("h2-single-conn-pool", repo(), config);
+        try {
+            // H2 folds the unquoted DDL table name to uppercase, and the bridge quotes
+            // whatever it's given verbatim -> must match H2's stored case exactly.
+            TableDefinition cols = ds.getResultColumns("", "ROWS_T", new QueryParameters());
+            assertTrue(cols.size() > 0,
+                    "bare-table inference against a size-1 pool must resolve columns without deadlocking");
+
+            String quote = ds.getQuoteIdentifier();
+            assertEquals(quote, "\"",
+                    "expected H2's real identifier quote (from driver metadata); got [" + quote
+                            + "] which means getQuoteIdentifier() timed out acquiring a second"
+                            + " pool connection and silently fell back to the backtick default");
+        } finally {
+            ds.close();
+        }
+    }
+
+    @Test(groups = { "unit" })
+    public void writeQueryResult_bareTableQuery_resolvesQuoteWithoutExtraConnection() {
+        // Regression test: verifying that writeQueryResult(), when the quote identifier isn't yet cached, checks out exactly one 
+        // connection instead of two (one to resolve the quote via the no-arg getQuoteIdentifier(), another for the actual query).
+        JdbcDataSource ds = new JdbcDataSource("h2-writequery-quote", repo(), baseConfig());
+        try {
+            ColumnDefinition idCol = new ColumnDefinition("ID", DataType.Int32, false,
+                    DataType.DEFAULT_LENGTH, DataType.DEFAULT_PRECISION, DataType.DEFAULT_SCALE);
+            TableDefinition cols = new TableDefinition(idCol);
+
+            Capture w = new Capture();
+            // quoteIdentifier is still null here -- first-ever resolution for this instance.
+            ds.executeQuery("", "ROWS_T", "ROWS_T", cols, new QueryParameters(), w);
+
+            // Use acquire count, not creation count: minimumIdle=1 pre-warms one physical
+            // connection at pool startup, so both the buggy (2 checkouts) and fixed (1
+            // checkout) code paths would reuse it without creating a NEW connection --
+            // creation count alone can't tell the two apart. Acquire count can.
+            JsonObject usage = new JsonObject(ds.getPoolUsage());
+            Double acquired = usage.getDouble("connections_acquire_count");
+            assertNotNull(acquired, "expected hikaricp.connections.acquire metric to be present: " + usage);
+            assertEquals(acquired, 1.0,
+                    "a single writeQueryResult() call with an uncached quote must check out exactly one"
+                            + " connection, not one to resolve the quote plus one to run the query; got "
+                            + usage);
         } finally {
             ds.close();
         }
