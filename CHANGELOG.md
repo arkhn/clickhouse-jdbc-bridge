@@ -1,3 +1,11 @@
+## [1.2.1-rc.1](https://github.com/arkhn/clickhouse-jdbc-bridge/compare/v1.2.0...v1.2.1-rc.1) (2026-08-04)
+
+### Bug Fixes
+
+* fix 2 pour le quote ([fbdd06d](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/fbdd06d8d10395f503d3072e311484be35aee45d))
+* quote gestion ([bbf16bc](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/bbf16bc523e97dbf1930a93e11dbf4b5b220a25b))
+* quote gestion ([fbb6802](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/fbb68020fc748c4ebe4653b72f3e8c0f75563485))
+
 ## [1.2.0](https://github.com/arkhn/clickhouse-jdbc-bridge/compare/v1.1.0...v1.2.0) (2026-07-12)
 
 
