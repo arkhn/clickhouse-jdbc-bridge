@@ -743,7 +743,6 @@ public class JdbcBridgeVerticle extends AbstractVerticle implements ExtensionMan
 
             String normalizedQuery = parser.getNormalizedQuery();
             LogContext.setSchema(parser.getRawSchema());
-            LogContext.setQuery(normalizedQuery);
             if (log.isDebugEnabled()) {
                 log.debug("Generated query:\n{}\nNormalized query:\n{}", generatedQuery, normalizedQuery);
             }
@@ -752,6 +751,7 @@ public class JdbcBridgeVerticle extends AbstractVerticle implements ExtensionMan
             NamedQuery namedQuery = getQueryRepository().get(normalizedQuery);
             // in case the "query" is a local file...
             normalizedQuery = ds.loadSavedQueryAsNeeded(normalizedQuery, params);
+            LogContext.setQuery(normalizedQuery);
 
             // TODO: use named schema as table name?
 
