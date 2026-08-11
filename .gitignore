@@ -10,3 +10,4 @@ target/
 test.sh
 test-dir/
 .DS_Store
+AGENTS.md
