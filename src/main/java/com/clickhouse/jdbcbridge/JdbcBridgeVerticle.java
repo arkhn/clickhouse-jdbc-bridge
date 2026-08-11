@@ -31,6 +31,7 @@ import com.clickhouse.jdbcbridge.core.DataType;
 import com.clickhouse.jdbcbridge.core.Extension;
 import com.clickhouse.jdbcbridge.core.ExtensionManager;
 import com.clickhouse.jdbcbridge.core.ConnectionTest;
+import com.clickhouse.jdbcbridge.core.LogContext;
 import com.clickhouse.jdbcbridge.core.NamedDataSource;
 import com.clickhouse.jdbcbridge.impl.JdbcDataSource;
 import com.clickhouse.jdbcbridge.core.NamedQuery;
@@ -404,8 +405,13 @@ public class JdbcBridgeVerticle extends AbstractVerticle implements ExtensionMan
      */
     private void handleTestConnection(RoutingContext ctx) {
         JsonObject config = new JsonObject(ctx.getBodyAsString());
-        JsonObject result = testDatasource(getDataSourceRepository(), config);
-        ctx.response().putHeader("Content-Type", "application/json").end(result.encode());
+        LogContext.setDataSource(config.getString("id", "connection-test"));
+        try {
+            JsonObject result = testDatasource(getDataSourceRepository(), config);
+            ctx.response().putHeader("Content-Type", "application/json").end(result.encode());
+        } finally {
+            LogContext.clear();
+        }
     }
 
     /**
@@ -499,6 +505,7 @@ public class JdbcBridgeVerticle extends AbstractVerticle implements ExtensionMan
     private void handleColumnsInfo(RoutingContext ctx) {
         try {
             final QueryParser parser = QueryParser.fromRequest(ctx, getDataSourceRepository());
+            LogContext.setDataSource(parser.getConnectionString());
 
             // priority: named/inline schema -> named query -> type inferring
             String rawSchema = parser.getRawSchema();
@@ -514,6 +521,7 @@ public class JdbcBridgeVerticle extends AbstractVerticle implements ExtensionMan
             String dsId = uri;
             if (ds != null) {
                 dsId = ds.getId();
+                LogContext.setDataSource(dsId);
                 params = ds.newQueryParameters(params);
             }
 
@@ -556,6 +564,8 @@ public class JdbcBridgeVerticle extends AbstractVerticle implements ExtensionMan
         } catch (Exception e) {
             log.error("Exception in handleColumnsInfo", e);
             ctx.fail(e);
+        } finally {
+            LogContext.clear();
         }
     }
 
@@ -620,129 +630,143 @@ public class JdbcBridgeVerticle extends AbstractVerticle implements ExtensionMan
     private void handleQuery(RoutingContext ctx) {
         final Repository<NamedDataSource> manager = getDataSourceRepository();
         final QueryParser parser = QueryParser.fromRequest(ctx, manager);
+        LogContext.setDataSource(parser.getConnectionString());
 
-        final HttpServerResponse resp = ctx.response().setChunked(true);
+        try {
+            final HttpServerResponse resp = ctx.response().setChunked(true);
 
-        if (log.isTraceEnabled()) {
-            log.trace("About to execute query...");
-        }
+            if (log.isTraceEnabled()) {
+                log.trace("About to execute query...");
+            }
 
-        QueryParameters params = parser.getQueryParameters();
-        NamedDataSource ds = getDataSource(manager, parser.getConnectionString(), params.isDebug());
-        if (ds == null) {
-            // Unknown datasource name AND adhoc fall-through denied by AdhocPolicy:
-            // surface a 404 rather than NPE-ing inside ds.newQueryParameters(...).
-            ctx.response().setStatusCode(404)
-                    .end("Datasource [" + parser.getConnectionString() + "] not found");
-            return;
-        }
-        params = ds.newQueryParameters(params);
+            QueryParameters params = parser.getQueryParameters();
+            NamedDataSource ds = getDataSource(manager, parser.getConnectionString(), params.isDebug());
+            if (ds == null) {
+                // Unknown datasource name AND adhoc fall-through denied by AdhocPolicy:
+                // surface a 404 rather than NPE-ing inside ds.newQueryParameters(...).
+                ctx.response().setStatusCode(404)
+                        .end("Datasource [" + parser.getConnectionString() + "] not found");
+                return;
+            }
+            LogContext.setDataSource(ds.getId());
+            params = ds.newQueryParameters(params);
 
-        String rawSchema = parser.getRawSchema();
-        NamedSchema namedSchema = getSchemaRepository().get(rawSchema);
+            String rawSchema = parser.getRawSchema();
+            NamedSchema namedSchema = getSchemaRepository().get(rawSchema);
 
-        String generatedQuery = parser.getRawQuery();
-        String normalizedQuery = parser.getNormalizedQuery();
-        // try if it's a named query first
-        NamedQuery namedQuery = getQueryRepository().get(normalizedQuery);
-        // in case the "query" is a local file...
-        normalizedQuery = ds.loadSavedQueryAsNeeded(normalizedQuery, params);
+            String generatedQuery = parser.getRawQuery();
+            String normalizedQuery = parser.getNormalizedQuery();
+            // try if it's a named query first
+            NamedQuery namedQuery = getQueryRepository().get(normalizedQuery);
+            // in case the "query" is a local file...
+            normalizedQuery = ds.loadSavedQueryAsNeeded(normalizedQuery, params);
 
-        if (log.isDebugEnabled()) {
-            log.debug("Generated query:\n{}\nNormalized query:\n{}", generatedQuery, normalizedQuery);
-        }
-
-        ResponseWriter writer = new ResponseWriter(resp, parser.getStreamOptions(),
-                ds.getQueryTimeout(params.getTimeout()));
-
-        long executionStartTime = System.currentTimeMillis();
-        if (namedQuery != null) {
             if (log.isDebugEnabled()) {
-                log.debug("Found named query: [{}]", namedQuery);
+                log.debug("Generated query:\n{}\nNormalized query:\n{}", generatedQuery, normalizedQuery);
             }
 
-            if (namedSchema == null) {
-                namedSchema = getSchemaRepository().get(namedQuery.getSchema());
-            }
-            // columns in request might just be a subset of defined list
-            // for example:
-            // - named query 'test' is: select a, b, c from table
-            // - clickhouse query: select b, a from jdbc('?','','test')
-            // - requested columns: b, a
-            ds.executeQuery(rawSchema, namedQuery, namedSchema != null ? namedSchema.getColumns() : parser.getTable(),
-                    params, writer);
-        } else {
-            // columnsInfo could be different from what we responded earlier, so let's parse
-            // it again
-            TableDefinition queryColumns = namedSchema != null ? namedSchema.getColumns() : parser.getTable();
-            // unfortunately default values will be lost between two requests, so we have to
-            // add it back...
-            List<ColumnDefinition> additionalColumns = new ArrayList<ColumnDefinition>();
-            if (params.showDatasourceColumn()) {
-                additionalColumns.add(new ColumnDefinition(TableDefinition.COLUMN_DATASOURCE, DataType.Str, true,
-                        DEFAULT_LENGTH, DEFAULT_PRECISION, DEFAULT_SCALE, null, ds.getId(), null));
-            }
-            if (params.showCustomColumns()) {
-                additionalColumns.addAll(ds.getCustomColumns());
+            ResponseWriter writer = new ResponseWriter(resp, parser.getStreamOptions(),
+                    ds.getQueryTimeout(params.getTimeout()));
+
+            long executionStartTime = System.currentTimeMillis();
+            if (namedQuery != null) {
+                if (log.isDebugEnabled()) {
+                    log.debug("Found named query: [{}]", namedQuery);
+                }
+
+                if (namedSchema == null) {
+                    namedSchema = getSchemaRepository().get(namedQuery.getSchema());
+                }
+                // columns in request might just be a subset of defined list
+                // for example:
+                // - named query 'test' is: select a, b, c from table
+                // - clickhouse query: select b, a from jdbc('?','','test')
+                // - requested columns: b, a
+                ds.executeQuery(rawSchema, namedQuery,
+                        namedSchema != null ? namedSchema.getColumns() : parser.getTable(), params, writer);
+            } else {
+                // columnsInfo could be different from what we responded earlier, so let's parse
+                // it again
+                TableDefinition queryColumns = namedSchema != null ? namedSchema.getColumns() : parser.getTable();
+                // unfortunately default values will be lost between two requests, so we have to
+                // add it back...
+                List<ColumnDefinition> additionalColumns = new ArrayList<ColumnDefinition>();
+                if (params.showDatasourceColumn()) {
+                    additionalColumns.add(new ColumnDefinition(TableDefinition.COLUMN_DATASOURCE, DataType.Str, true,
+                            DEFAULT_LENGTH, DEFAULT_PRECISION, DEFAULT_SCALE, null, ds.getId(), null));
+                }
+                if (params.showCustomColumns()) {
+                    additionalColumns.addAll(ds.getCustomColumns());
+                }
+
+                queryColumns.updateValues(additionalColumns);
+
+                ds.executeQuery(namedSchema == null ? rawSchema : Utils.EMPTY_STRING, parser.getNormalizedQuery(),
+                        normalizedQuery, queryColumns, params, writer);
             }
 
-            queryColumns.updateValues(additionalColumns);
+            if (log.isDebugEnabled()) {
+                log.debug("Completed execution in {} ms.", System.currentTimeMillis() - executionStartTime);
+            }
 
-            ds.executeQuery(namedSchema == null ? rawSchema : Utils.EMPTY_STRING, parser.getNormalizedQuery(),
-                    normalizedQuery, queryColumns, params, writer);
+            resp.end();
+        } finally {
+            LogContext.clear();
         }
-
-        if (log.isDebugEnabled()) {
-            log.debug("Completed execution in {} ms.", System.currentTimeMillis() - executionStartTime);
-        }
-
-        resp.end();
     }
 
     // https://github.com/ClickHouse/ClickHouse/blob/bee5849c6a7dba20dbd24dfc5fd5a786745d90ff/programs/odbc-bridge/MainHandler.cpp#L169
     private void handleWrite(RoutingContext ctx) {
         final Repository<NamedDataSource> manager = getDataSourceRepository();
         final QueryParser parser = QueryParser.fromRequest(ctx, manager, true);
+        LogContext.setDataSource(parser.getConnectionString());
 
-        final HttpServerResponse resp = ctx.response().setChunked(true);
+        try {
+            final HttpServerResponse resp = ctx.response().setChunked(true);
 
-        if (log.isTraceEnabled()) {
-            log.trace("About to execute mutation...");
-        }
+            if (log.isTraceEnabled()) {
+                log.trace("About to execute mutation...");
+            }
 
-        QueryParameters params = parser.getQueryParameters();
-        NamedDataSource ds = getDataSource(manager, parser.getConnectionString(), params.isDebug());
-        params = ds == null ? params : ds.newQueryParameters(params);
+            QueryParameters params = parser.getQueryParameters();
+            NamedDataSource ds = getDataSource(manager, parser.getConnectionString(), params.isDebug());
+            if (ds != null) {
+                LogContext.setDataSource(ds.getId());
+                params = ds.newQueryParameters(params);
+            }
 
-        final String generatedQuery = parser.getRawQuery();
+            final String generatedQuery = parser.getRawQuery();
 
-        String normalizedQuery = parser.getNormalizedQuery();
-        if (log.isDebugEnabled()) {
-            log.debug("Generated query:\n{}\nNormalized query:\n{}", generatedQuery, normalizedQuery);
-        }
+            String normalizedQuery = parser.getNormalizedQuery();
+            if (log.isDebugEnabled()) {
+                log.debug("Generated query:\n{}\nNormalized query:\n{}", generatedQuery, normalizedQuery);
+            }
 
-        // try if it's a named query first
-        NamedQuery namedQuery = getQueryRepository().get(normalizedQuery);
-        // in case the "query" is a local file...
-        normalizedQuery = ds.loadSavedQueryAsNeeded(normalizedQuery, params);
+            // try if it's a named query first
+            NamedQuery namedQuery = getQueryRepository().get(normalizedQuery);
+            // in case the "query" is a local file...
+            normalizedQuery = ds.loadSavedQueryAsNeeded(normalizedQuery, params);
 
-        // TODO: use named schema as table name?
+            // TODO: use named schema as table name?
 
-        String table = parser.getRawQuery();
-        if (namedQuery != null) {
-            table = parser.extractTable(ds.loadSavedQueryAsNeeded(namedQuery.getQuery(), params));
-        } else {
-            table = parser.extractTable(ds.loadSavedQueryAsNeeded(normalizedQuery, params));
-        }
+            String table = parser.getRawQuery();
+            if (namedQuery != null) {
+                table = parser.extractTable(ds.loadSavedQueryAsNeeded(namedQuery.getQuery(), params));
+            } else {
+                table = parser.extractTable(ds.loadSavedQueryAsNeeded(normalizedQuery, params));
+            }
 
-        ResponseWriter writer = new ResponseWriter(resp, parser.getStreamOptions(),
-                ds.getWriteTimeout(params.getTimeout()));
+            ResponseWriter writer = new ResponseWriter(resp, parser.getStreamOptions(),
+                    ds.getWriteTimeout(params.getTimeout()));
 
-        ds.executeMutation(parser.getRawSchema(), table, parser.getTable(), params, ByteBuffer.wrap(ctx.getBody()),
-                writer);
+            ds.executeMutation(parser.getRawSchema(), table, parser.getTable(), params, ByteBuffer.wrap(ctx.getBody()),
+                    writer);
 
-        if (writer.isOpen()) {
-            resp.end(ByteBuffer.asBuffer(WRITE_RESPONSE));
+            if (writer.isOpen()) {
+                resp.end(ByteBuffer.asBuffer(WRITE_RESPONSE));
+            }
+        } finally {
+            LogContext.clear();
         }
     }
 
