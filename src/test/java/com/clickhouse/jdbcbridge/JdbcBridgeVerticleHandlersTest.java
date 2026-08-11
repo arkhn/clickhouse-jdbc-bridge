@@ -177,4 +177,48 @@ public class JdbcBridgeVerticleHandlersTest {
 
         assertEquals(v.getDataSource(happyRepo, "real", false), real);
     }
+
+    @Test(groups = { "unit" })
+    public void withLogContext_seedsContextForDelegateAndClearsAfter() {
+        java.util.concurrent.atomic.AtomicReference<String> seenByDelegate =
+                new java.util.concurrent.atomic.AtomicReference<>();
+
+        JdbcBridgeVerticle.withLogContext(req -> "my-ds",
+                req -> seenByDelegate.set(com.clickhouse.jdbcbridge.core.LogContext.getDataSource()))
+                .handle("request");
+
+        assertEquals(seenByDelegate.get(), "my-ds", "delegate must observe the seeded datasource");
+        assertEquals(com.clickhouse.jdbcbridge.core.LogContext.getDataSource(), null,
+                "context must be cleared once the delegate returns");
+    }
+
+    @Test(groups = { "unit" })
+    public void withLogContext_clearsContextEvenWhenDelegateThrows() {
+        try {
+            JdbcBridgeVerticle.withLogContext(req -> "boom-ds", req -> {
+                com.clickhouse.jdbcbridge.core.LogContext.setQuery("SELECT 1");
+                throw new IllegalStateException("boom");
+            }).handle("request");
+            org.testng.Assert.fail("delegate exception must propagate");
+        } catch (IllegalStateException expected) {
+            assertEquals(expected.getMessage(), "boom");
+        }
+        assertEquals(com.clickhouse.jdbcbridge.core.LogContext.getDataSource(), null,
+                "datasource must be cleared on the exceptional path (worker threads are pooled)");
+        assertEquals(com.clickhouse.jdbcbridge.core.LogContext.getQuery(), null,
+                "every LogContext field set by the delegate must be cleared too");
+    }
+
+    @Test(groups = { "unit" })
+    public void withLogContext_nullExtractionIsAllowed() {
+        // /test has no connection_string parameter — extractor returns null.
+        java.util.concurrent.atomic.AtomicReference<String> seenByDelegate =
+                new java.util.concurrent.atomic.AtomicReference<>("sentinel");
+
+        JdbcBridgeVerticle.withLogContext(req -> null,
+                req -> seenByDelegate.set(com.clickhouse.jdbcbridge.core.LogContext.getDataSource()))
+                .handle("request");
+
+        assertEquals(seenByDelegate.get(), null, "null datasource must pass through untagged");
+    }
 }

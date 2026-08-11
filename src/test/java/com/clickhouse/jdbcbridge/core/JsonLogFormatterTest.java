@@ -160,6 +160,53 @@ public class JsonLogFormatterTest {
     }
 
     @Test(groups = { "unit" })
+    public void testCarriageReturnBackspaceAndFormFeedAreEscaped() {
+        String message = "line1\r\nline2\bback\ffeed";
+        String formatted = formatter.format(newRecord(Level.INFO, message));
+
+        assertSingleLine(formatted);
+        assertTrue(formatted.contains("\\r\\n"), formatted);
+        assertTrue(formatted.contains("\\b"), formatted);
+        assertTrue(formatted.contains("\\f"), formatted);
+        assertEquals(new JsonObject(formatted).getString("message"), message);
+    }
+
+    @Test(groups = { "unit" })
+    public void testCustomJulLevelFallsBackToRawName() {
+        // JUL allows custom levels; anything outside the standard set must
+        // keep its own name rather than being coerced to an SLF4J level.
+        Level custom = new Level("NOTICE", 850) {
+        };
+        assertEquals(JsonLogFormatter.mapLevel(custom), "NOTICE");
+        assertEquals(new JsonObject(formatter.format(newRecord(custom, "heads up"))).getString("log.level"),
+                "NOTICE");
+    }
+
+    @Test(groups = { "unit" })
+    public void testEmptyContextValuesAreOmitted() {
+        try {
+            LogContext.setDataSource("");
+            LogContext.setQuery("");
+            JsonObject parsed = new JsonObject(formatter.format(newRecord(Level.INFO, "hello")));
+            assertFalse(parsed.containsKey("datasource"), "empty datasource must be omitted");
+            assertFalse(parsed.containsKey("query"), "empty query must be omitted");
+        } finally {
+            LogContext.clear();
+        }
+    }
+
+    @Test(groups = { "unit" })
+    public void testThrownWithoutMessageOmitsErrorMessage() {
+        LogRecord record = newRecord(Level.SEVERE, "query failed");
+        record.setThrown(new IllegalStateException());
+
+        JsonObject parsed = new JsonObject(formatter.format(record));
+        assertEquals(parsed.getString("error.type"), "java.lang.IllegalStateException");
+        assertFalse(parsed.containsKey("error.message"), "null throwable message must be omitted");
+        assertNotNull(parsed.getString("error.stack_trace"));
+    }
+
+    @Test(groups = { "unit" })
     public void testErrorFieldsAbsentWithoutThrown() {
         JsonObject parsed = new JsonObject(formatter.format(newRecord(Level.WARNING, "just a warning")));
         assertFalse(parsed.containsKey("error.type"));
