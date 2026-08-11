@@ -19,15 +19,19 @@ package com.clickhouse.jdbcbridge.core;
 /**
  * Per-thread logging context. The SLF4J binding in use (slf4j-jdk14) has a
  * no-op MDC, so this small ThreadLocal holder is the channel between request
- * handlers and {@link JsonLogFormatter}: handlers set the datasource id at
- * the beginning of a request and clear it in a {@code finally} block (worker
- * threads are pooled), and the formatter reads it synchronously on the same
- * thread when a log record is written.
+ * handlers and {@link JsonLogFormatter}: handlers set the datasource id (and
+ * where available the query, schema and table being processed) at the
+ * beginning of a request and clear everything in a {@code finally} block
+ * (worker threads are pooled), and the formatter reads the values
+ * synchronously on the same thread when a log record is written.
  *
  * @since 2.0
  */
 public final class LogContext {
     private static final ThreadLocal<String> DATASOURCE = new ThreadLocal<>();
+    private static final ThreadLocal<String> QUERY = new ThreadLocal<>();
+    private static final ThreadLocal<String> SCHEMA = new ThreadLocal<>();
+    private static final ThreadLocal<String> TABLE = new ThreadLocal<>();
 
     private LogContext() {
     }
@@ -40,7 +44,34 @@ public final class LogContext {
         return DATASOURCE.get();
     }
 
+    public static void setQuery(String query) {
+        QUERY.set(query);
+    }
+
+    public static String getQuery() {
+        return QUERY.get();
+    }
+
+    public static void setSchema(String schema) {
+        SCHEMA.set(schema);
+    }
+
+    public static String getSchema() {
+        return SCHEMA.get();
+    }
+
+    public static void setTable(String table) {
+        TABLE.set(table);
+    }
+
+    public static String getTable() {
+        return TABLE.get();
+    }
+
     public static void clear() {
         DATASOURCE.remove();
+        QUERY.remove();
+        SCHEMA.remove();
+        TABLE.remove();
     }
 }

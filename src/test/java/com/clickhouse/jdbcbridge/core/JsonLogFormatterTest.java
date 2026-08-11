@@ -94,6 +94,32 @@ public class JsonLogFormatterTest {
     }
 
     @Test(groups = { "unit" })
+    public void testQuerySchemaTableFields() {
+        try {
+            LogContext.setDataSource("my-ds");
+            LogContext.setQuery("SELECT *\nFROM my_table");
+            LogContext.setSchema("public");
+            LogContext.setTable("my_table");
+
+            String formatted = formatter.format(newRecord(Level.INFO, "Executing query"));
+            assertSingleLine(formatted);
+
+            JsonObject parsed = new JsonObject(formatted);
+            assertEquals(parsed.getString("datasource"), "my-ds");
+            assertEquals(parsed.getString("query"), "SELECT *\nFROM my_table");
+            assertEquals(parsed.getString("schema"), "public");
+            assertEquals(parsed.getString("table"), "my_table");
+        } finally {
+            LogContext.clear();
+        }
+
+        JsonObject parsed = new JsonObject(formatter.format(newRecord(Level.INFO, "hello")));
+        assertFalse(parsed.containsKey("query"), "query must be absent after clear()");
+        assertFalse(parsed.containsKey("schema"), "schema must be absent after clear()");
+        assertFalse(parsed.containsKey("table"), "table must be absent after clear()");
+    }
+
+    @Test(groups = { "unit" })
     public void testLevelMapping() {
         assertEquals(JsonLogFormatter.mapLevel(Level.SEVERE), "ERROR");
         assertEquals(JsonLogFormatter.mapLevel(Level.WARNING), "WARN");

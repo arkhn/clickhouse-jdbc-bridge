@@ -506,6 +506,7 @@ public class JdbcBridgeVerticle extends AbstractVerticle implements ExtensionMan
         try {
             final QueryParser parser = QueryParser.fromRequest(ctx, getDataSourceRepository());
             LogContext.setDataSource(parser.getConnectionString());
+            LogContext.setSchema(parser.getRawSchema());
 
             // priority: named/inline schema -> named query -> type inferring
             String rawSchema = parser.getRawSchema();
@@ -513,6 +514,7 @@ public class JdbcBridgeVerticle extends AbstractVerticle implements ExtensionMan
             NamedSchema namedSchema = getSchemaRepository().get(rawSchema);
 
             String rawQuery = parser.getRawQuery();
+            LogContext.setQuery(parser.getNormalizedQuery());
             log.info("Raw query:\n{}", rawQuery);
 
             String uri = parser.getConnectionString();
@@ -652,6 +654,7 @@ public class JdbcBridgeVerticle extends AbstractVerticle implements ExtensionMan
             params = ds.newQueryParameters(params);
 
             String rawSchema = parser.getRawSchema();
+            LogContext.setSchema(rawSchema);
             NamedSchema namedSchema = getSchemaRepository().get(rawSchema);
 
             String generatedQuery = parser.getRawQuery();
@@ -660,6 +663,7 @@ public class JdbcBridgeVerticle extends AbstractVerticle implements ExtensionMan
             NamedQuery namedQuery = getQueryRepository().get(normalizedQuery);
             // in case the "query" is a local file...
             normalizedQuery = ds.loadSavedQueryAsNeeded(normalizedQuery, params);
+            LogContext.setQuery(normalizedQuery);
 
             if (log.isDebugEnabled()) {
                 log.debug("Generated query:\n{}\nNormalized query:\n{}", generatedQuery, normalizedQuery);
@@ -738,6 +742,8 @@ public class JdbcBridgeVerticle extends AbstractVerticle implements ExtensionMan
             final String generatedQuery = parser.getRawQuery();
 
             String normalizedQuery = parser.getNormalizedQuery();
+            LogContext.setSchema(parser.getRawSchema());
+            LogContext.setQuery(normalizedQuery);
             if (log.isDebugEnabled()) {
                 log.debug("Generated query:\n{}\nNormalized query:\n{}", generatedQuery, normalizedQuery);
             }
@@ -755,6 +761,7 @@ public class JdbcBridgeVerticle extends AbstractVerticle implements ExtensionMan
             } else {
                 table = parser.extractTable(ds.loadSavedQueryAsNeeded(normalizedQuery, params));
             }
+            LogContext.setTable(table);
 
             ResponseWriter writer = new ResponseWriter(resp, parser.getStreamOptions(),
                     ds.getWriteTimeout(params.getTimeout()));

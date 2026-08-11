@@ -32,8 +32,9 @@ import java.util.logging.LogRecord;
  * of the shade-plugin relocations; escaping is hand-rolled below.
  *
  * <p>Emitted fields (null/empty ones are omitted): {@code @timestamp},
- * {@code log.level}, {@code log.logger}, {@code message}, {@code datasource}
- * (from {@link LogContext}), {@code process.thread.name},
+ * {@code log.level}, {@code log.logger}, {@code message}, {@code datasource},
+ * {@code query}, {@code schema}, {@code table} (all four from
+ * {@link LogContext}), {@code process.thread.name},
  * {@code service.name}, and for records carrying a throwable:
  * {@code error.type}, {@code error.message}, {@code error.stack_trace}.</p>
  *
@@ -56,6 +57,9 @@ public class JsonLogFormatter extends Formatter {
         appendField(builder, "log.logger", record.getLoggerName());
         appendField(builder, "message", formatMessage(record));
         appendField(builder, "datasource", LogContext.getDataSource());
+        appendField(builder, "query", LogContext.getQuery());
+        appendField(builder, "schema", LogContext.getSchema());
+        appendField(builder, "table", LogContext.getTable());
         appendField(builder, "process.thread.name", Thread.currentThread().getName());
         appendField(builder, "service.name", SERVICE_NAME);
 

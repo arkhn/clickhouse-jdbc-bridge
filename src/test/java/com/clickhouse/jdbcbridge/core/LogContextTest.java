@@ -33,10 +33,20 @@ public class LogContextTest {
 
             LogContext.setDataSource("ds-2");
             assertEquals(LogContext.getDataSource(), "ds-2");
+
+            LogContext.setQuery("SELECT 1");
+            LogContext.setSchema("public");
+            LogContext.setTable("t1");
+            assertEquals(LogContext.getQuery(), "SELECT 1");
+            assertEquals(LogContext.getSchema(), "public");
+            assertEquals(LogContext.getTable(), "t1");
         } finally {
             LogContext.clear();
         }
         assertNull(LogContext.getDataSource());
+        assertNull(LogContext.getQuery());
+        assertNull(LogContext.getSchema());
+        assertNull(LogContext.getTable());
     }
 
     @Test(groups = { "unit" })
