@@ -1,3 +1,9 @@
+## [1.3.0-rc.1](https://github.com/arkhn/clickhouse-jdbc-bridge/compare/v1.2.1-rc.1...v1.3.0-rc.1) (2026-08-11)
+
+### Features
+
+* **ca:** trust inline caCertificate for Oracle (TCPS) and InterSystems IRIS ([edfd149](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/edfd14936e0809bdf3a5e963f4de3964b0269b81))
+
 ## [1.2.1-rc.1](https://github.com/arkhn/clickhouse-jdbc-bridge/compare/v1.2.0...v1.2.1-rc.1) (2026-08-04)
 
 ### Bug Fixes
