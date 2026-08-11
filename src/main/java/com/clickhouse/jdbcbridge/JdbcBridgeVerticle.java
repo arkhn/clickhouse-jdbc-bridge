@@ -23,6 +23,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.function.Consumer;
+import java.util.function.Function;
 
 import com.clickhouse.jdbcbridge.core.AdhocPolicy;
 import com.clickhouse.jdbcbridge.core.ByteBuffer;
@@ -31,6 +32,7 @@ import com.clickhouse.jdbcbridge.core.DataType;
 import com.clickhouse.jdbcbridge.core.Extension;
 import com.clickhouse.jdbcbridge.core.ExtensionManager;
 import com.clickhouse.jdbcbridge.core.ConnectionTest;
+import com.clickhouse.jdbcbridge.core.LogContext;
 import com.clickhouse.jdbcbridge.core.NamedDataSource;
 import com.clickhouse.jdbcbridge.impl.JdbcDataSource;
 import com.clickhouse.jdbcbridge.core.NamedQuery;
@@ -58,6 +60,7 @@ import io.vertx.config.ConfigRetriever;
 import io.vertx.config.ConfigRetrieverOptions;
 import io.vertx.config.ConfigStoreOptions;
 import io.vertx.core.AbstractVerticle;
+import io.vertx.core.Handler;
 import io.vertx.core.Vertx;
 import io.vertx.core.VertxOptions;
 import io.vertx.core.http.HttpServer;
@@ -283,13 +286,16 @@ public class JdbcBridgeVerticle extends AbstractVerticle implements ExtensionMan
         // new query) blocks the loop itself, which also prevents queryTimeoutHandler's
         // timer from ever firing, so the response stalls until the client times out.
         router.post("/columns_info").produces(RESPONSE_CONTENT_TYPE).handler(queryTimeoutHandler)
-                .blockingHandler(this::handleColumnsInfo, SERIAL_MODE);
-        router.post("/").produces(RESPONSE_CONTENT_TYPE).handler(queryTimeoutHandler).blockingHandler(this::handleQuery,
-                SERIAL_MODE);
+                .blockingHandler(withLogContext(JdbcBridgeVerticle::connectionStringParam, this::handleColumnsInfo),
+                        SERIAL_MODE);
+        router.post("/").produces(RESPONSE_CONTENT_TYPE).handler(queryTimeoutHandler).blockingHandler(
+                withLogContext(JdbcBridgeVerticle::connectionStringParam, this::handleQuery), SERIAL_MODE);
         router.post("/write").produces(RESPONSE_CONTENT_TYPE).handler(queryTimeoutHandler)
-                .blockingHandler(this::handleWrite, SERIAL_MODE);
+                .blockingHandler(withLogContext(JdbcBridgeVerticle::connectionStringParam, this::handleWrite),
+                        SERIAL_MODE);
         router.post("/test").handler(queryTimeoutHandler)
-                .blockingHandler(this::handleTestConnection, SERIAL_MODE);
+                .blockingHandler(withLogContext(JdbcBridgeVerticle::connectionStringParam, this::handleTestConnection),
+                        SERIAL_MODE);
 
         log.info("Starting web server...");
         int port = bridgeServerConfig.getInteger("serverPort", DEFAULT_SERVER_PORT);
@@ -404,8 +410,35 @@ public class JdbcBridgeVerticle extends AbstractVerticle implements ExtensionMan
      */
     private void handleTestConnection(RoutingContext ctx) {
         JsonObject config = new JsonObject(ctx.getBodyAsString());
+        LogContext.setDataSource(config.getString("id", "connection-test"));
         JsonObject result = testDatasource(getDataSourceRepository(), config);
         ctx.response().putHeader("Content-Type", "application/json").end(result.encode());
+    }
+
+    /**
+     * Decorates a request handler so every log record emitted while it runs is
+     * tagged with the request's datasource (see {@link LogContext} and
+     * {@link com.clickhouse.jdbcbridge.core.JsonLogFormatter}). The extractor
+     * seeds the context before the delegate runs (typically the raw
+     * {@code connection_string} parameter; handlers refine it to the resolved
+     * datasource id later), and the context is always cleared afterwards —
+     * blocking handlers run on pooled worker threads, so a leftover value
+     * would leak into an unrelated request on the same thread. Generic in the
+     * input type so the contract is unit-testable without a RoutingContext.
+     */
+    static <T> Handler<T> withLogContext(Function<T, String> dataSourceExtractor, Handler<T> delegate) {
+        return input -> {
+            LogContext.setDataSource(dataSourceExtractor.apply(input));
+            try {
+                delegate.handle(input);
+            } finally {
+                LogContext.clear();
+            }
+        };
+    }
+
+    private static String connectionStringParam(RoutingContext ctx) {
+        return ctx.request().getParam("connection_string");
     }
 
     /**
@@ -502,10 +535,12 @@ public class JdbcBridgeVerticle extends AbstractVerticle implements ExtensionMan
 
             // priority: named/inline schema -> named query -> type inferring
             String rawSchema = parser.getRawSchema();
+            LogContext.setSchema(rawSchema);
             String normalizedSchema = parser.getNormalizedSchema();
             NamedSchema namedSchema = getSchemaRepository().get(rawSchema);
 
             String rawQuery = parser.getRawQuery();
+            LogContext.setQuery(parser.getNormalizedQuery());
             log.info("Raw query:\n{}", rawQuery);
 
             String uri = parser.getConnectionString();
@@ -514,6 +549,7 @@ public class JdbcBridgeVerticle extends AbstractVerticle implements ExtensionMan
             String dsId = uri;
             if (ds != null) {
                 dsId = ds.getId();
+                LogContext.setDataSource(dsId);
                 params = ds.newQueryParameters(params);
             }
 
@@ -636,9 +672,11 @@ public class JdbcBridgeVerticle extends AbstractVerticle implements ExtensionMan
                     .end("Datasource [" + parser.getConnectionString() + "] not found");
             return;
         }
+        LogContext.setDataSource(ds.getId());
         params = ds.newQueryParameters(params);
 
         String rawSchema = parser.getRawSchema();
+        LogContext.setSchema(rawSchema);
         NamedSchema namedSchema = getSchemaRepository().get(rawSchema);
 
         String generatedQuery = parser.getRawQuery();
@@ -647,6 +685,7 @@ public class JdbcBridgeVerticle extends AbstractVerticle implements ExtensionMan
         NamedQuery namedQuery = getQueryRepository().get(normalizedQuery);
         // in case the "query" is a local file...
         normalizedQuery = ds.loadSavedQueryAsNeeded(normalizedQuery, params);
+        LogContext.setQuery(normalizedQuery);
 
         if (log.isDebugEnabled()) {
             log.debug("Generated query:\n{}\nNormalized query:\n{}", generatedQuery, normalizedQuery);
@@ -712,11 +751,13 @@ public class JdbcBridgeVerticle extends AbstractVerticle implements ExtensionMan
 
         QueryParameters params = parser.getQueryParameters();
         NamedDataSource ds = getDataSource(manager, parser.getConnectionString(), params.isDebug());
+        LogContext.setDataSource(ds == null ? parser.getConnectionString() : ds.getId());
         params = ds == null ? params : ds.newQueryParameters(params);
 
         final String generatedQuery = parser.getRawQuery();
 
         String normalizedQuery = parser.getNormalizedQuery();
+        LogContext.setSchema(parser.getRawSchema());
         if (log.isDebugEnabled()) {
             log.debug("Generated query:\n{}\nNormalized query:\n{}", generatedQuery, normalizedQuery);
         }
@@ -725,6 +766,7 @@ public class JdbcBridgeVerticle extends AbstractVerticle implements ExtensionMan
         NamedQuery namedQuery = getQueryRepository().get(normalizedQuery);
         // in case the "query" is a local file...
         normalizedQuery = ds.loadSavedQueryAsNeeded(normalizedQuery, params);
+        LogContext.setQuery(normalizedQuery);
 
         // TODO: use named schema as table name?
 
@@ -734,6 +776,7 @@ public class JdbcBridgeVerticle extends AbstractVerticle implements ExtensionMan
         } else {
             table = parser.extractTable(ds.loadSavedQueryAsNeeded(normalizedQuery, params));
         }
+        LogContext.setTable(table);
 
         ResponseWriter writer = new ResponseWriter(resp, parser.getStreamOptions(),
                 ds.getWriteTimeout(params.getTimeout()));
