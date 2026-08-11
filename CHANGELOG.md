@@ -1,3 +1,14 @@
+## [1.3.0-rc.2](https://github.com/arkhn/clickhouse-jdbc-bridge/compare/v1.3.0-rc.1...v1.3.0-rc.2) (2026-08-11)
+
+### Bug Fixes
+
+* set query log field after saved-query resolution in handleWrite ([43fb73c](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/43fb73c5343654fb6817289dcf1e755b9b696e4e))
+
+### Features
+
+* add query, schema and table fields to structured logs ([be21bf3](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/be21bf3ef4401a389369871d415fce9af3daa8d4))
+* structured JSON logs with dedicated datasource field ([b282b9a](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/b282b9a8500762181fb2625ec0da2c9ae953f4a3)), closes [arkhn/helm-charts#1653](https://github.com/arkhn/helm-charts/issues/1653)
+
 ## [1.3.0-rc.1](https://github.com/arkhn/clickhouse-jdbc-bridge/compare/v1.2.1-rc.1...v1.3.0-rc.1) (2026-08-11)
 
 ### Features
