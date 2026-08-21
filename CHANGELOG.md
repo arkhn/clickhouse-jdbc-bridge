@@ -1,3 +1,18 @@
+## [1.3.0](https://github.com/arkhn/clickhouse-jdbc-bridge/compare/v1.2.0...v1.3.0) (2026-08-21)
+
+### Bug Fixes
+
+* fix 2 pour le quote ([fbdd06d](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/fbdd06d8d10395f503d3072e311484be35aee45d))
+* quote gestion ([bbf16bc](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/bbf16bc523e97dbf1930a93e11dbf4b5b220a25b))
+* quote gestion ([fbb6802](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/fbb68020fc748c4ebe4653b72f3e8c0f75563485))
+* set query log field after saved-query resolution in handleWrite ([43fb73c](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/43fb73c5343654fb6817289dcf1e755b9b696e4e))
+
+### Features
+
+* add query, schema and table fields to structured logs ([be21bf3](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/be21bf3ef4401a389369871d415fce9af3daa8d4))
+* **ca:** trust inline caCertificate for Oracle (TCPS) and InterSystems IRIS ([edfd149](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/edfd14936e0809bdf3a5e963f4de3964b0269b81))
+* structured JSON logs with dedicated datasource field ([b282b9a](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/b282b9a8500762181fb2625ec0da2c9ae953f4a3)), closes [arkhn/helm-charts#1653](https://github.com/arkhn/helm-charts/issues/1653)
+
 ## [1.3.0-rc.2](https://github.com/arkhn/clickhouse-jdbc-bridge/compare/v1.3.0-rc.1...v1.3.0-rc.2) (2026-08-11)
 
 ### Bug Fixes
