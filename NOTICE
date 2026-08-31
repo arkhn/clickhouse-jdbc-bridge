@@ -88,13 +88,13 @@ This project includes:
   Testcontainers :: MS SQL Server under MIT
   Testcontainers Core under MIT
   testng under Apache License, Version 2.0
+  Vert.x Auth Common under The Apache Software License, Version 2.0 or Eclipse Public License - v 1.0
   Vert.x Bridge Common under The Apache Software License, Version 2.0 or Eclipse Public License - v 1.0
+  Vert.x Config under Apache License, Version 2.0
   Vert.x Core under The Apache Software License, Version 2.0 or Eclipse Public License - v 2.0
   Vert.x metrics implementation for Micrometer.io under The Apache Software License, Version 2.0 or Eclipse Public License - v 1.0
   Vert.x URI Template under The Apache Software License, Version 2.0 or Eclipse Public License - v 1.0
-  vertx-auth-common under The Apache Software License, Version 2.0 or Eclipse Public License - v 1.0
-  vertx-config under Apache License, Version 2.0
-  vertx-web under The Apache Software License, Version 2.0 or Eclipse Public License - v 2.0
-  vertx-web-client under The Apache Software License, Version 2.0 or Eclipse Public License - v 1.0
-  vertx-web-common under The Apache Software License, Version 2.0 or Eclipse Public License - v 1.0
+  Vert.x Web under The Apache Software License, Version 2.0 or Eclipse Public License - v 2.0
+  Vert.x Web Client under The Apache Software License, Version 2.0 or Eclipse Public License - v 1.0
+  Vert.x Web Common under The Apache Software License, Version 2.0 or Eclipse Public License - v 1.0
 
