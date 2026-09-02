@@ -236,6 +236,57 @@ public class JdbcDataSourceH2Test {
     }
 
     @Test(groups = { "unit" })
+    public void inferTypes_datetimeColumnsAlwaysUseMillisecondScale() throws Exception {
+        // Source scales (0, 6, ...) must not leak into the declared ClickHouse type:
+        // JDBC only carries milliseconds, so every inferred DateTime64 is DateTime64(3).
+        try (Connection seed = DriverManager.getConnection(jdbcUrl, "sa", "");
+                Statement s = seed.createStatement()) {
+            s.execute("CREATE TABLE stamps ("
+                    + "ts0 TIMESTAMP(0), "
+                    + "ts6 TIMESTAMP(6), "
+                    + "tz6 TIMESTAMP(6) WITH TIME ZONE, "
+                    + "t0 TIME)");
+        }
+
+        JdbcDataSource ds = new JdbcDataSource("h2-datetime-scale", repo(), baseConfig());
+        try {
+            TableDefinition cols = ds.getResultColumns("", "SELECT ts0, ts6, tz6, t0 FROM stamps",
+                    new QueryParameters());
+
+            assertEquals(cols.size(), 4);
+            for (int i = 0; i < cols.size(); i++) {
+                ColumnDefinition col = cols.getColumn(i);
+                assertEquals(col.getType(), DataType.DateTime64, "column " + col.getName());
+                assertEquals(col.getScale(), DataType.DEFAULT_DATETIME64_SCALE,
+                        "column " + col.getName() + " must be normalized to millisecond scale");
+                assertTrue(col.toString().contains("DateTime64(3)"),
+                        "declared type must be DateTime64(3), got: " + col.toString());
+            }
+        } finally {
+            ds.close();
+        }
+    }
+
+    @Test(groups = { "unit" })
+    public void explicitColumnDeclarationKeepsItsOwnDateTime64Scale() {
+        // Escape hatch: a scale declared as a type string (saved query, `columns`
+        // header sent by ClickHouse) is never rewritten to 3.
+        assertEquals(ColumnDefinition.fromString("ts DateTime64(6)").getScale(), 6);
+        assertEquals(ColumnDefinition.fromString("ts DateTime64(0)").getScale(), 0);
+    }
+
+    @Test(groups = { "unit" })
+    public void dateTime64ScaleIsClampedToTheDeclaredPrecision() {
+        // Why getColumnsFromResultSet also forces the precision: a driver that
+        // reports no precision would drag the millisecond scale back to 0.
+        assertEquals(new ColumnDefinition("ts", DataType.DateTime64, true, DataType.DEFAULT_LENGTH,
+                DataType.DEFAULT_PRECISION, DataType.DEFAULT_DATETIME64_SCALE).getScale(), 0);
+        assertEquals(new ColumnDefinition("ts", DataType.DateTime64, true, DataType.DEFAULT_LENGTH,
+                DataType.DEFAULT_DATETIME64_PRECISION, DataType.DEFAULT_DATETIME64_SCALE).getScale(),
+                DataType.DEFAULT_DATETIME64_SCALE);
+    }
+
+    @Test(groups = { "unit" })
     public void newInstance_buildsViaFactoryWithValidConfig() {
         JdbcDataSource ds = JdbcDataSource.newInstance("h2-factory", repo(), baseConfig());
 
