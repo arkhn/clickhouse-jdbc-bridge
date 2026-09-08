@@ -576,7 +576,10 @@ public final class ByteBuffer {
             time = nanos > 0 ? nanos / 1000000 : 1L;
         }
 
-        if (scale > 0) {
+        // scale 0 must be rescaled too: its tick is the second, while time is in
+        // milliseconds. Only a negative scale, which is not a valid precision,
+        // leaves the value untouched.
+        if (scale >= 0) {
             double normalizedTime = time;
             if (nanos != 0) {
                 normalizedTime = time - nanos / 1000000 + nanos / 1000000.0;
