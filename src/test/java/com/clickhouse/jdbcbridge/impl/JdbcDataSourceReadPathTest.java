@@ -120,12 +120,16 @@ public class JdbcDataSourceReadPathTest {
     static final class Capture extends ResponseWriter {
         int writes;
         long bytes;
+        ByteBuffer last;
 
         @Override public boolean isOpen() { return true; }
         @Override public boolean writeQueueFull() { return false; }
         @Override public void write(ByteBuffer buffer) {
             writes++;
-            if (buffer != null) bytes += buffer.length();
+            if (buffer != null) {
+                bytes += buffer.length();
+                last = buffer;
+            }
         }
     }
 
@@ -182,6 +186,43 @@ public class JdbcDataSourceReadPathTest {
         } finally {
             ds.close();
         }
+    }
+
+    /**
+     * The scale of a DateTime64 column comes from the source metadata, so the read
+     * path must rescale the millisecond value carried by `java.sql.Timestamp` down
+     * to the tick of the declared scale. Reading the same column at scale 0 and at
+     * scale 3 pins that: a second tick is a thousand times coarser than a
+     * millisecond one. The ratio is asserted rather than an absolute instant, so
+     * the test does not depend on the timezone the buffer applies.
+     */
+    @Test(groups = { "unit" })
+    public void readPath_dateTime64RescalesToDeclaredScale() {
+        JdbcDataSource ds = new JdbcDataSource("h2-dt64-scales", repo(), baseConfig());
+        try {
+            // The precision must be passed: `ColumnDefinition` clamps the scale to it,
+            // so a scale of 3 declared with precision 0 silently becomes a scale of 0.
+            int precision = DataType.DEFAULT_DATETIME64_PRECISION;
+            long tick0 = readSingleTick(ds, "ts0", col("TS0", DataType.DateTime64, 0, precision, 0));
+            long tick3 = readSingleTick(ds, "ts3", col("TS3", DataType.DateTime64, 0, precision, 3));
+
+            assertEquals(tick0, tick3 / 1000L,
+                    "a DateTime64(0) tick is the second while a DateTime64(3) tick is the millisecond");
+        } finally {
+            ds.close();
+        }
+    }
+
+    /** Runs a one-column query and returns the single tick written on the wire. */
+    private long readSingleTick(JdbcDataSource ds, String alias, ColumnDefinition column) {
+        String query = "SELECT ts AS " + alias + " FROM t";
+        Capture w = new Capture();
+
+        ds.executeQuery("", query, query, new TableDefinition(column), new QueryParameters(), w);
+
+        assertEquals(w.last.length(), 8,
+                "one non-nullable DateTime64 column must emit a single 8 byte tick");
+        return w.last.readInt64();
     }
 
     @Test(groups = { "unit" })
