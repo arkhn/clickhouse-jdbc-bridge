@@ -34,8 +34,12 @@ public class ByteBufferDateTime64ScaleTest {
     private static final long EPOCH_MILLIS = 1768465800000L;
 
     private long writtenTick(int scale) {
+        return writtenTick(EPOCH_MILLIS, scale);
+    }
+
+    private long writtenTick(long millis, int scale) {
         ByteBuffer buffer = ByteBuffer.newInstance(64);
-        buffer.writeDateTime64(new Timestamp(EPOCH_MILLIS), scale, UTC);
+        buffer.writeDateTime64(new Timestamp(millis), scale, UTC);
         return buffer.readInt64();
     }
 
@@ -58,6 +62,20 @@ public class ByteBufferDateTime64ScaleTest {
     @Test(groups = { "unit" })
     public void testFinerTickAboveMillisecond() {
         assertEquals(writtenTick(6), 1768465800000000L);
+    }
+
+    /**
+     * A sub-second input also exercises the `nanos != 0` branch, which the whole
+     * second above leaves untouched.
+     */
+    @Test(groups = { "unit" })
+    public void testSubSecondIsDroppedForScale0() {
+        assertEquals(writtenTick(EPOCH_MILLIS + 123L, 0), 1768465800L);
+    }
+
+    @Test(groups = { "unit" })
+    public void testSubSecondIsKeptForScale3() {
+        assertEquals(writtenTick(EPOCH_MILLIS + 123L, 3), 1768465800123L);
     }
 
     /**
