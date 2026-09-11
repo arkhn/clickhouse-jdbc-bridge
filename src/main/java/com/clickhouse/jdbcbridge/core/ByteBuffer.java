@@ -577,8 +577,8 @@ public final class ByteBuffer {
         }
 
         // scale 0 must be rescaled too: its tick is the second, while time is in
-        // milliseconds. Only a negative scale, which is not a valid precision,
-        // leaves the value untouched.
+        // milliseconds. A negative scale is not a valid precision, so it keeps
+        // skipping the rescaling.
         if (scale >= 0) {
             double normalizedTime = time;
             if (nanos != 0) {
