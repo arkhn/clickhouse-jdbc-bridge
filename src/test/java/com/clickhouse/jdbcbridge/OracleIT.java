@@ -18,7 +18,9 @@ package com.clickhouse.jdbcbridge;
 
 import java.sql.Connection;
 import java.sql.Statement;
+import java.sql.Timestamp;
 
+import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertTrue;
 
 import org.testcontainers.containers.JdbcDatabaseContainer;
@@ -33,6 +35,10 @@ import org.testcontainers.containers.OracleContainer;
  * type mapping fix from commit cb73d94.
  */
 public class OracleIT extends AbstractBridgeIT {
+    // Widest offset any timezone uses, so the instant assertion does not depend
+    // on the one of the machine running the test.
+    private static final long MAX_TIMEZONE_OFFSET_SECONDS = 14 * 3600L;
+
 
     @Override
     protected JdbcDatabaseContainer<?> createDatabaseContainer() {
@@ -82,6 +88,34 @@ public class OracleIT extends AbstractBridgeIT {
     @Override
     protected String smokeQuery() {
         return "SELECT * FROM test_table";
+    }
+
+    /**
+     * An Oracle DATE is reported with a scale of 0, so its tick is a second. The
+     * declared type says so, this checks the bytes agree: they used to carry a
+     * millisecond count, which ClickHouse read as a date in year 58000.
+     *
+     * The instant is asserted within the widest timezone offset there is, because
+     * the writer shifts it by the offset of its own timezone and that belongs to
+     * the deployment, not to this test. A millisecond count would still be off by
+     * three orders of magnitude, so the check keeps all its teeth.
+     */
+    @org.testng.annotations.Test(groups = { "sit" })
+    public void testOracleDateIsSerialisedInSeconds() throws Exception {
+        byte[] row = postQueryBytes(getDatasourceName(),
+                "SELECT datewithtime FROM test_table WHERE id = 1");
+
+        assertEquals(row.length, 9, "expected a null flag and an Int64 tick, got " + row.length + " bytes");
+        assertEquals(row[0], 0, "the value of the row is not null");
+
+        long tick = 0L;
+        for (int i = 8; i >= 1; i--) {
+            tick = (tick << 8) | (row[i] & 0xFFL);
+        }
+
+        long expected = Timestamp.valueOf("2024-01-15 14:30:00").getTime() / 1000L;
+        assertTrue(Math.abs(tick - expected) <= MAX_TIMEZONE_OFFSET_SECONDS,
+                "expected a second tick near " + expected + " for 2024-01-15 14:30:00, got " + tick);
     }
 
     @org.testng.annotations.Test(groups = { "sit" })

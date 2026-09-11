@@ -38,6 +38,7 @@ import org.testng.annotations.Test;
 
 import io.vertx.core.DeploymentOptions;
 import io.vertx.core.Vertx;
+import io.vertx.core.buffer.Buffer;
 import io.vertx.core.http.HttpClient;
 import io.vertx.core.http.HttpClientResponse;
 import io.vertx.core.http.HttpMethod;
@@ -209,9 +210,14 @@ public abstract class AbstractBridgeIT {
     private static final class ResponseAndBody {
         final int status;
         final String body;
-        ResponseAndBody(int status, String body) {
+        // The bridge answers a query in RowBinary. Buffer.toString() decodes it as
+        // UTF-8, which mangles the bytes beyond repair, so keep them too.
+        final byte[] rawBody;
+
+        ResponseAndBody(int status, String body, byte[] rawBody) {
             this.status = status;
             this.body = body;
+            this.rawBody = rawBody;
         }
     }
 
@@ -403,12 +409,12 @@ public abstract class AbstractBridgeIT {
                 .onFailure(respFuture::completeExceptionally);
 
         HttpClientResponse resp = respFuture.get(HTTP_RESPONSE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
-        CompletableFuture<String> bodyFuture = new CompletableFuture<>();
+        CompletableFuture<Buffer> bodyFuture = new CompletableFuture<>();
         resp.body()
-                .onSuccess(b -> bodyFuture.complete(b.toString()))
+                .onSuccess(bodyFuture::complete)
                 .onFailure(bodyFuture::completeExceptionally);
-        return new ResponseAndBody(resp.statusCode(),
-                bodyFuture.get(HTTP_BODY_TIMEOUT_SECONDS, TimeUnit.SECONDS));
+        Buffer buffer = bodyFuture.get(HTTP_BODY_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        return new ResponseAndBody(resp.statusCode(), buffer.toString(), buffer.getBytes());
     }
 
     /**
@@ -440,6 +446,23 @@ public abstract class AbstractBridgeIT {
     private ResponseAndBody rawPostColumnsInfo(String connectionString, String tableOrSql)
             throws Exception {
         return rawPostToPath("/columns_info", connectionString, tableOrSql);
+    }
+
+    /**
+     * Same as {@link #postQuery(String, String)} but keeps the RowBinary bytes,
+     * which is the only way to assert a value the bridge serialised.
+     *
+     * Retries on the empty body of a cold call, the same way
+     * {@link #postColumnsInfo(String, String)} does, otherwise a first un-warmed
+     * query reddens the caller for a reason that has nothing to do with it.
+     */
+    protected byte[] postQueryBytes(String connectionString, String tableOrSql) throws Exception {
+        ResponseAndBody r = respWithRetry("/query [" + tableOrSql + "]",
+                () -> rawPostQueryWithStatus(connectionString, tableOrSql));
+        assertEquals(r.status, 200,
+                "Expected 200 from bridge for [" + tableOrSql + "]; body=" + r.body);
+
+        return r.rawBody;
     }
 
     private String doPostQuery(String connectionString, String tableOrSql, boolean assert200)
@@ -528,7 +551,7 @@ public abstract class AbstractBridgeIT {
         resp.body().onSuccess(b -> bodyFuture.complete(b.toString()))
                 .onFailure(bodyFuture::completeExceptionally);
         String body = bodyFuture.get(HTTP_BODY_TIMEOUT_SECONDS, TimeUnit.SECONDS);
-        return new ResponseAndBody(resp.statusCode(), body);
+        return new ResponseAndBody(resp.statusCode(), body, body.getBytes(StandardCharsets.UTF_8));
     }
 
     private String rawGetPath(String path) throws Exception {
