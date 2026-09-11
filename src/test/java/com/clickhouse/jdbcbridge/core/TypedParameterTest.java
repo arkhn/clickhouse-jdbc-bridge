@@ -19,6 +19,7 @@ package com.clickhouse.jdbcbridge.core;
 import static org.testng.Assert.*;
 
 import java.math.BigDecimal;
+import java.util.TimeZone;
 
 import org.testng.annotations.Test;
 
@@ -246,5 +247,26 @@ public class TypedParameterTest {
         assertEquals(param.merge(emptyJson).getValue(), newValue);
         assertEquals(param.merge(nullJson).getValue(), newValue);
         assertEquals(param.merge(json).getValue(), jsonValue);
+    }
+
+    /**
+     * A DateTime64 value is a millisecond count, so it needs the scale the caller
+     * passes, which is the one of the column. The scale carried by the enum is 18,
+     * a precision no DateTime64 column can have.
+     */
+    @Test(groups = { "unit" })
+    public void testDateTime64ParamFollowsTheScaleOfTheColumn() {
+        TimeZone utc = TimeZone.getTimeZone("UTC");
+        long millis = 1768465800123L; // 2026-01-15 08:30:00.123 UTC
+
+        TypedParameter<Long> param = new TypedParameter<>(Long.class, DataType.DateTime64, "p", 0L, millis);
+
+        ByteBuffer seconds = ByteBuffer.newInstance(64);
+        param.writeValueTo(seconds, 23, 0, utc);
+        assertEquals(seconds.readInt64(), 1768465800L);
+
+        ByteBuffer exact = ByteBuffer.newInstance(64);
+        param.writeValueTo(exact, 23, 3, utc);
+        assertEquals(exact.readInt64(), millis);
     }
 }
