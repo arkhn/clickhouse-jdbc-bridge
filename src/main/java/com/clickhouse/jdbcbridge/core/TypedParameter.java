@@ -231,7 +231,9 @@ public class TypedParameter<T> {
                 buffer.writeDateTime((Long) this.value, timezone);
                 break;
             case DateTime64:
-                buffer.writeDateTime64((Long) this.value, 0, this.chType.getScale(), timezone);
+                // The scale of the column, which the caller passes, not the one the
+                // enum advertises: that one is 18, which no column can even have.
+                buffer.writeDateTime64((Long) this.value, 0, scale, timezone);
                 break;
             case UInt64:
                 buffer.writeUInt64((Long) this.value);

@@ -987,7 +987,7 @@ public class JdbcDataSource extends NamedDataSource {
                     stmt.setTimestamp(i, buffer.readDateTime(info.getTimeZone()));
                     break;
                 case DateTime64:
-                    stmt.setTimestamp(i, buffer.readDateTime64(info.getTimeZone()));
+                    stmt.setTimestamp(i, buffer.readDateTime64(info.getScale(), info.getTimeZone()));
                     break;
                 case Decimal:
                     stmt.setBigDecimal(i, buffer.readDecimal(info.getPrecision(), info.getScale()));
