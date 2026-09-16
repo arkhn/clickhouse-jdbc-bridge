@@ -43,15 +43,39 @@ public class MySqlIT extends AbstractBridgeIT {
     @Override
     protected void setupTestData(Connection conn) throws Exception {
         try (Statement s = conn.createStatement()) {
+            // A MySQL driver reports DATETIME and TIME with a scale of 0, which is
+            // the combination that used to be written as a millisecond count into
+            // a second-ticking column. `born` is before 1970 and `midnight` sits
+            // exactly on the epoch, the two instants that used to be crushed.
             s.execute("CREATE TABLE IF NOT EXISTS test_table "
-                    + "(id INT PRIMARY KEY, name VARCHAR(100), value INT)");
+                    + "(id INT PRIMARY KEY, name VARCHAR(100), value INT, "
+                    + " born DATETIME, midnight DATETIME, clock TIME)");
             s.execute("INSERT INTO test_table VALUES "
-                    + "(1, 'test1', 100), (2, 'test2', 200), (3, 'test3', 300)");
+                    + "(1, 'test1', 100, '1950-06-15 08:30:00', '1970-01-01 00:00:00', '08:30:00'), "
+                    + "(2, 'test2', 200, '2026-01-15 08:30:00', '1970-01-01 00:00:00', '00:00:00'), "
+                    + "(3, 'test3', 300, '1900-01-01 00:00:00', '1970-01-01 00:00:00', '23:59:59')");
         }
     }
 
     @Override
     protected String smokeQuery() {
         return "SELECT * FROM test_table";
+    }
+
+    /**
+     * The scale a MySQL driver reports for DATETIME and TIME is 0, so the bridge
+     * must declare the tick unit it actually writes.
+     *
+     * The value itself is asserted by the unit tests of the encoder: the bridge
+     * answers in RowBinary and this harness captures the body as a String, so a
+     * tick cannot be decoded from here.
+     */
+    @org.testng.annotations.Test(groups = { "sit" })
+    public void testDatetimeColumnsDeclareTheirScale() throws Exception {
+        String columnsInfo = postColumnsInfo(getDatasourceName(),
+                "SELECT born, midnight, clock FROM test_table WHERE id = 1");
+
+        org.testng.Assert.assertTrue(columnsInfo.contains("DateTime64(0)"),
+                "MySQL datetime columns must declare their tick unit; bridge returned: " + columnsInfo);
     }
 }

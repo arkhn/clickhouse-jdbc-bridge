@@ -20,6 +20,7 @@ import static com.clickhouse.jdbcbridge.core.Utils.*;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.math.RoundingMode;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.sql.Timestamp;
@@ -37,6 +38,11 @@ import io.vertx.core.buffer.Buffer;
  * @since 2.0
  */
 public final class ByteBuffer {
+    private static final BigInteger MIN_TICK = BigInteger.valueOf(Long.MIN_VALUE);
+    private static final BigInteger MAX_TICK = BigInteger.valueOf(Long.MAX_VALUE);
+
+    private static final TimeZone UTC = TimeZone.getTimeZone("UTC");
+
     // self-maintained readerIndex
     protected int position = 0;
 
@@ -535,18 +541,42 @@ public final class ByteBuffer {
         return readDateTime64(null);
     }
 
-    public Timestamp readDateTime64(TimeZone tz) {
-        BigInteger time = this.readUInt64();
+    /**
+     * Reads the tick of a DateTime64(scale) column back into an instant. The
+     * scale must be the one of the column, otherwise the value is off by a power
+     * of ten.
+     */
+    public Timestamp readDateTime64(int scale, TimeZone tz) {
+        long ticks = this.readInt64();
+
+        if (scale < 0) {
+            return new Timestamp(ticks);
+        }
+
+        BigDecimal millis = BigDecimal.valueOf(ticks).movePointRight(3 - scale);
 
         if ((tz = tz == null ? this.timezone : tz) != null) {
-            time = time.subtract(BigInteger.valueOf(tz.getOffset(time.longValue())));
+            millis = millis.subtract(BigDecimal.valueOf(tz.getOffset(millis.longValue())));
         }
 
-        if (time.compareTo(BigInteger.ZERO) < 0) { // 0000-00-00 00:00:00
-            time = BigInteger.ONE;
-        }
+        BigDecimal seconds = millis.movePointLeft(3);
+        BigDecimal wholeSeconds = seconds.setScale(0, RoundingMode.FLOOR);
+        int nanos = seconds.subtract(wholeSeconds).movePointRight(9).setScale(0, RoundingMode.FLOOR).intValue();
 
-        return new Timestamp(time.longValue());
+        // Same reason as the write path: an instant no Timestamp can hold must not
+        // wrap into a plausible looking date.
+        Timestamp value = new Timestamp(requireTick(wholeSeconds.movePointRight(3).toBigInteger(), scale));
+        value.setNanos(nanos);
+
+        return value;
+    }
+
+    /**
+     * Reads a tick counted in milliseconds, which is what every caller of this
+     * overload has always written.
+     */
+    public Timestamp readDateTime64(TimeZone tz) {
+        return readDateTime64(DataType.DEFAULT_DATETIME64_SCALE, tz);
     }
 
     public ByteBuffer writeDateTime64(Date value, int scale) {
@@ -565,34 +595,51 @@ public final class ByteBuffer {
         return writeDateTime64(Objects.requireNonNull(value).getTime(), value.getNanos(), scale, tz);
     }
 
-    // ClickHouse's DateTime64 supports precision from 0 to 18, but JDBC only
-    // supports 3(millisecond)
+    /**
+     * Writes an instant as the tick of a DateTime64(scale) column, which
+     * ClickHouse stores as a signed Int64 counting 10^-scale second since the
+     * Unix epoch. A tick below zero is an instant before 1970, which ClickHouse
+     * accepts down to 1900.
+     *
+     * @param time  epoch milliseconds, as carried by {@link Timestamp#getTime()}
+     * @param nanos sub-second nanoseconds, as carried by
+     *              {@link Timestamp#getNanos()}
+     * @param scale tick unit of the target column, a negative value writes the
+     *              millisecond value unchanged
+     * @param tz    timezone whose offset shifts the instant, null uses the one
+     *              of this buffer
+     */
     public ByteBuffer writeDateTime64(long time, int nanos, int scale, TimeZone tz) {
         if ((tz = tz == null ? this.timezone : tz) != null) {
             time += tz.getOffset(time);
         }
 
-        if (time <= 0L) { // 0000-00-00 00:00:00.000
-            time = nanos > 0 ? nanos / 1000000 : 1L;
+        if (scale < 0) {
+            return this.writeInt64(time);
         }
 
-        // scale 0 must be rescaled too: its tick is the second, while time is in
-        // milliseconds. A negative scale is not a valid precision, so it keeps
-        // skipping the rescaling.
-        if (scale >= 0) {
-            double normalizedTime = time;
-            if (nanos != 0) {
-                normalizedTime = time - nanos / 1000000 + nanos / 1000000.0;
-            }
+        // Exact arithmetic: a double drops every digit below the microsecond, and
+        // silently wraps to a negative tick once the scale pushes it past 2^63.
+        BigDecimal millis = BigDecimal.valueOf(time - nanos / 1000000L).add(BigDecimal.valueOf(nanos, 6));
+        BigInteger ticks = millis.movePointRight(scale - 3).setScale(0, RoundingMode.FLOOR).toBigInteger();
 
-            if (scale < 3) {
-                time = BigDecimal.valueOf(normalizedTime).divide(BigDecimal.valueOf(10).pow(3 - scale)).longValue();
-            } else if (scale > 3) {
-                time = BigDecimal.valueOf(normalizedTime).multiply(BigDecimal.valueOf(10).pow(scale - 3)).longValue();
-            }
+        return this.writeInt64(requireTick(ticks, scale));
+    }
+
+    /**
+     * A tick outside Int64 means the scale is too fine for the instant, which is
+     * a configuration error affecting every row of the column. Clamping would
+     * store a date that still looks plausible: the lowest Int64 reads back as
+     * 1900-01-01, the very bound a real value can legitimately carry. ClickHouse
+     * itself answers DECIMAL_OVERFLOW here, so fail the same way.
+     */
+    private static long requireTick(BigInteger ticks, int scale) {
+        if (ticks.compareTo(MIN_TICK) < 0 || ticks.compareTo(MAX_TICK) > 0) {
+            throw new IllegalArgumentException(new StringBuilder().append("Tick(").append(ticks)
+                    .append(") of a DateTime64(").append(scale).append(") does NOT fit an Int64").toString());
         }
 
-        return this.writeUInt64(time);
+        return ticks.longValue();
     }
 
     public java.sql.Date readDate() {
@@ -737,7 +784,9 @@ public final class ByteBuffer {
                 writeUInt32(defaultValues.Datetime.getValue());
                 break;
             case DateTime64:
-                writeUInt64(defaultValues.Datetime64.getValue());
+                // The default is a millisecond value, so it needs the tick unit of
+                // the column. UTC keeps it on the instant it names.
+                writeDateTime64(defaultValues.Datetime64.getValue(), 0, column.getScale(), UTC);
                 break;
             case Decimal:
                 writeDecimal(defaultValues.Decimal.getValue(), column.getPrecision(), column.getScale());
