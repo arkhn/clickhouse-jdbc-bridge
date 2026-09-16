@@ -1,3 +1,9 @@
+## [1.3.1-rc.1](https://github.com/arkhn/clickhouse-jdbc-bridge/compare/v1.3.0...v1.3.1-rc.1) (2026-09-11)
+
+### Bug Fixes
+
+* **datetime64:** rescale values written into a scale-0 column (bug 1000 factor) ([#24](https://github.com/arkhn/clickhouse-jdbc-bridge/issues/24)) ([7c9d77d](https://github.com/arkhn/clickhouse-jdbc-bridge/commit/7c9d77d3858a9b15c828d73d118571e66c9278c8))
+
 ## [1.3.0](https://github.com/arkhn/clickhouse-jdbc-bridge/compare/v1.2.0...v1.3.0) (2026-08-21)
 
 ### Bug Fixes
