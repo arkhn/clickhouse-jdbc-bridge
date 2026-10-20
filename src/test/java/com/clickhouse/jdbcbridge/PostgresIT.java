@@ -21,6 +21,7 @@ import static org.testng.Assert.assertEquals;
 import java.sql.Connection;
 import java.sql.Statement;
 import java.time.Duration;
+import java.time.LocalDate;
 
 import org.testcontainers.containers.JdbcDatabaseContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -57,13 +58,13 @@ public class PostgresIT extends AbstractBridgeIT {
                     + "  value INT)");
             s.execute("INSERT INTO test_table VALUES "
                     + "(1, 'a', 10), (2, 'b', 20), (3, 'c', 30)");
-            s.execute("CREATE TABLE IF NOT EXISTS dt_table (id INT PRIMARY KEY, ts TIMESTAMP)");
+            s.execute("CREATE TABLE IF NOT EXISTS dt_table (id INT PRIMARY KEY, ts TIMESTAMP, day DATE)");
             s.execute("INSERT INTO dt_table VALUES "
-                    + "(1, '1950-06-15 08:30:00.123456'), "
-                    + "(2, '1970-01-01 00:00:00'), "
-                    + "(3, '2026-01-15 08:30:00.456789'), "
-                    + "(4, '-infinity'), "
-                    + "(5, 'infinity')");
+                    + "(1, '1950-06-15 08:30:00.123456', '1950-06-15'), "
+                    + "(2, '1970-01-01 00:00:00', '1970-01-01'), "
+                    + "(3, '2026-01-15 08:30:00.456789', '2026-01-15'), "
+                    + "(4, '-infinity', '-infinity'), "
+                    + "(5, 'infinity', 'infinity')");
         }
     }
 
@@ -84,5 +85,18 @@ public class PostgresIT extends AbstractBridgeIT {
                 // infinities saturate to the bounds of ClickHouse
                 wallClockTick("1900-01-01T00:00:00", 6),
                 wallClockTick("2299-12-31T23:59:59.999999", 6) });
+    }
+
+    @Test(groups = { "sit" })
+    public void testDateDaysAreTheSourceDate() throws Exception {
+        long[] days = postQueryDays(getDatasourceName(), "SELECT day FROM dt_table ORDER BY id", 5);
+
+        assertEquals(days, new long[] {
+                LocalDate.parse("1950-06-15").toEpochDay(),
+                LocalDate.parse("1970-01-01").toEpochDay(),
+                LocalDate.parse("2026-01-15").toEpochDay(),
+                // infinities saturate to the bounds of ClickHouse
+                LocalDate.parse("1900-01-01").toEpochDay(),
+                LocalDate.parse("2299-12-31").toEpochDay() });
     }
 }

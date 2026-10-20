@@ -162,6 +162,7 @@ public class DataTypeConverterTest {
             { DataType.Decimal256, DataTypeConverter.M_TYPE_NUMBER },
             // Date / DateTime
             { DataType.Date,       DataTypeConverter.M_TYPE_DATE },
+            { DataType.Date32,     DataTypeConverter.M_TYPE_DATE },
             { DataType.DateTime,   DataTypeConverter.M_TYPE_DATETIME },
             { DataType.DateTime64, DataTypeConverter.M_TYPE_DATETIME },
             // Text fallback

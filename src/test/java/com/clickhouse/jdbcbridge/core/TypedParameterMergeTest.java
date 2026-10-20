@@ -225,6 +225,15 @@ public class TypedParameterMergeTest {
     }
 
     @Test(groups = { "unit" })
+    public void writeValueTo_date32ColumnWritesItsDayNumber() {
+        ColumnDefinition column = new ColumnDefinition("d", DataType.Date32, false, DataType.DEFAULT_LENGTH,
+                DataType.DEFAULT_PRECISION, DataType.DEFAULT_SCALE, null, -7140, null);
+        ByteBuffer b = fresh();
+        column.writeValueTo(b);
+        assertEquals(b.readInt32(), -7140);
+    }
+
+    @Test(groups = { "unit" })
     public void writeValueTo_uintFamilies() {
         ByteBuffer b = fresh();
         new TypedParameter<>(Integer.class, DataType.UInt8, "u8", 0, 200).writeValueTo(b, 0, 0, null);

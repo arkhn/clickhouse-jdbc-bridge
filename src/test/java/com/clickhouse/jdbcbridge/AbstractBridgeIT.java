@@ -468,21 +468,32 @@ public abstract class AbstractBridgeIT {
         return r.rawBody;
     }
 
-    /**
-     * Decodes the answer of a query whose cells are all a non-null Nullable(Int64),
-     * which is how a DateTime64 tick travels, row after row.
-     */
     protected long[] postQueryTicks(String connectionString, String tableOrSql, int cells) throws Exception {
+        return postQueryIntegers(connectionString, tableOrSql, cells, Long.BYTES);
+    }
+
+    protected long[] postQueryDays(String connectionString, String tableOrSql, int cells) throws Exception {
+        return postQueryIntegers(connectionString, tableOrSql, cells, Integer.BYTES);
+    }
+
+    /**
+     * Decodes the answer of a query whose cells are all a non-null Nullable integer
+     * of the given width in bytes, row after row: a DateTime64 tick travels as an
+     * Int64, a Date32 day as an Int32.
+     */
+    private long[] postQueryIntegers(String connectionString, String tableOrSql, int cells, int width)
+            throws Exception {
         byte[] body = postQueryBytes(connectionString, tableOrSql);
-        assertEquals(body.length, cells * 9, "expected " + cells + " cells of a null flag and an Int64");
+        assertEquals(body.length, cells * (1 + width), "expected " + cells + " cells of a null flag and "
+                + width + " bytes");
 
         java.nio.ByteBuffer wire = java.nio.ByteBuffer.wrap(body).order(ByteOrder.LITTLE_ENDIAN);
-        long[] ticks = new long[cells];
+        long[] values = new long[cells];
         for (int i = 0; i < cells; i++) {
             assertEquals(wire.get(), (byte) 0, "cell " + i + " is null");
-            ticks[i] = wire.getLong();
+            values[i] = width == Long.BYTES ? wire.getLong() : wire.getInt();
         }
-        return ticks;
+        return values;
     }
 
     /**

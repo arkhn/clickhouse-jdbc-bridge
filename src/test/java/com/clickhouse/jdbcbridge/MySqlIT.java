@@ -21,6 +21,7 @@ import static org.testng.Assert.assertEquals;
 import java.sql.Connection;
 import java.sql.Statement;
 import java.time.Duration;
+import java.time.LocalDate;
 
 import org.testcontainers.containers.JdbcDatabaseContainer;
 import org.testcontainers.containers.MySQLContainer;
@@ -50,12 +51,12 @@ public class MySqlIT extends AbstractBridgeIT {
                     + "(id INT PRIMARY KEY, name VARCHAR(100), value INT)");
             s.execute("INSERT INTO test_table VALUES "
                     + "(1, 'test1', 100), (2, 'test2', 200), (3, 'test3', 300)");
-            s.execute("CREATE TABLE IF NOT EXISTS dt_table (id INT PRIMARY KEY, dt DATETIME, clock TIME)");
+            s.execute("CREATE TABLE IF NOT EXISTS dt_table (id INT PRIMARY KEY, dt DATETIME, clock TIME, day DATE)");
             s.execute("INSERT INTO dt_table VALUES "
-                    + "(1, '1950-06-15 08:30:00', '08:30:00'), "
-                    + "(2, '2026-01-15 08:30:00', '23:59:59'), "
-                    + "(3, '1900-01-01 00:00:00', '00:00:00'), "
-                    + "(4, '1000-01-01 00:00:00', '12:00:00')");
+                    + "(1, '1950-06-15 08:30:00', '08:30:00', '1950-06-15'), "
+                    + "(2, '2026-01-15 08:30:00', '23:59:59', '2026-01-15'), "
+                    + "(3, '1900-01-01 00:00:00', '00:00:00', '1900-01-01'), "
+                    + "(4, '1000-01-01 00:00:00', '12:00:00', '1000-01-01')");
         }
     }
 
@@ -75,5 +76,17 @@ public class MySqlIT extends AbstractBridgeIT {
                 wallClockTick("1900-01-01T00:00:00", 0), wallClockTick("1970-01-01T00:00:00", 0),
                 // the lowest MySQL DATETIME saturates to the lowest ClickHouse one
                 wallClockTick("1900-01-01T00:00:00", 0), wallClockTick("1970-01-01T12:00:00", 0) });
+    }
+
+    @Test(groups = { "sit" })
+    public void testDateDaysAreTheSourceDate() throws Exception {
+        long[] days = postQueryDays(getDatasourceName(), "SELECT day FROM dt_table ORDER BY id", 4);
+
+        assertEquals(days, new long[] {
+                LocalDate.parse("1950-06-15").toEpochDay(),
+                LocalDate.parse("2026-01-15").toEpochDay(),
+                LocalDate.parse("1900-01-01").toEpochDay(),
+                // the lowest MySQL DATE saturates to the lowest ClickHouse Date32
+                LocalDate.parse("1900-01-01").toEpochDay() });
     }
 }

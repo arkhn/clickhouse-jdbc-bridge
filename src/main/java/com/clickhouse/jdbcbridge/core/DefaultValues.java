@@ -59,6 +59,7 @@ public class DefaultValues {
 
     // Date time
     public final TypedParameter<Integer> Date;
+    public final TypedParameter<Integer> Date32;
     public final TypedParameter<Long> Datetime;
     public final TypedParameter<Long> Datetime64;
 
@@ -106,6 +107,8 @@ public class DefaultValues {
         Utils.addTypedParameter(types, this.Float64 = new TypedParameter<>(Double.class, DataType.Float64.name(), 0.0));
 
         Utils.addTypedParameter(types, this.Date = new TypedParameter<>(Integer.class, DataType.Date.name(), 1));
+        Utils.addTypedParameter(types,
+                this.Date32 = new TypedParameter<>(Integer.class, DataType.Date32, DataType.Date32.name(), 1));
         Utils.addTypedParameter(types, this.Datetime = new TypedParameter<>(Long.class, DataType.DateTime.name(), 1L));
         Utils.addTypedParameter(types,
                 this.Datetime64 = new TypedParameter<>(Long.class, DataType.DateTime64, DataType.DateTime64.name(),

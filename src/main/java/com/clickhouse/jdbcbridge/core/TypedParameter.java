@@ -212,6 +212,7 @@ public class TypedParameter<T> {
                 buffer.writeInt16((Integer) this.value);
                 break;
             case Int32:
+            case Date32:
                 buffer.writeInt32((Integer) this.value);
                 break;
             case Int64:

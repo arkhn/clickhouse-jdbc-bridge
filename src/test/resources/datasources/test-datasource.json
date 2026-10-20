@@ -81,6 +81,12 @@
         "value": "2"
       },
       {
+        "name": "c_date32",
+        "type": "Date32",
+        "nullable": false,
+        "value": "2"
+      },
+      {
         "name": "c_datetime",
         "type": "DateTime",
         "nullable": false,
@@ -193,6 +199,7 @@
       "Float32": 3.0,
       "Float64": 3.0,
       "Date": 3,
+      "Date32": 3,
       "DateTime": 3,
       "DateTime64": 3.0,
       "Decimal": 3.0,

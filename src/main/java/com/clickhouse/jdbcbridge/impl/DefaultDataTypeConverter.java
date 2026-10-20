@@ -113,7 +113,8 @@ public class DefaultDataTypeConverter implements DataTypeConverter {
                 type = DataType.Str;
                 break;
             case DATE:
-                type = DataType.Date; // precision should be 10
+                // Date32, not Date: Date (UInt16) cannot represent a date before 1970.
+                type = DataType.Date32;
                 break;
             case TIME:
             case TIMESTAMP:

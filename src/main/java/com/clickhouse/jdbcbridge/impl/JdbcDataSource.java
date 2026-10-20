@@ -280,6 +280,9 @@ public class JdbcDataSource extends NamedDataSource {
                     case Date:
                         buffer.writeDate(rs.getDate(column));
                         break;
+                    case Date32:
+                        buffer.writeDate32(rs.getDate(column));
+                        break;
                     case DateTime:
                         buffer.writeDateTime(rs.getTimestamp(column), metadata.getTimeZone());
                         break;
@@ -982,6 +985,9 @@ public class JdbcDataSource extends NamedDataSource {
                     break;
                 case Date:
                     stmt.setDate(i, buffer.readDate());
+                    break;
+                case Date32:
+                    stmt.setDate(i, buffer.readDate32());
                     break;
                 case DateTime:
                     stmt.setTimestamp(i, buffer.readDateTime(info.getTimeZone()));

@@ -213,6 +213,22 @@ public class JdbcDataSourceReadPathTest {
         }
     }
 
+    @Test(groups = { "unit" })
+    public void readPath_date32KeepsADateBefore1970() {
+        JdbcDataSource ds = new JdbcDataSource("h2-date32", repo(), baseConfig());
+        try {
+            String query = "SELECT DATE '1950-06-15' AS d";
+            Capture w = new Capture();
+
+            ds.executeQuery("", query, query, new TableDefinition(col("D", DataType.Date32)),
+                    new QueryParameters(), w);
+
+            assertEquals(w.last.readInt32(), -7140);
+        } finally {
+            ds.close();
+        }
+    }
+
     /** Runs a one-column query and returns the single tick written on the wire. */
     private long readSingleTick(JdbcDataSource ds, String alias, ColumnDefinition column) {
         String query = "SELECT ts AS " + alias + " FROM t";

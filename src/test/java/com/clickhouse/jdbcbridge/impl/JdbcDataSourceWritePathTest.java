@@ -27,6 +27,7 @@ import java.sql.ResultSet;
 import java.sql.Statement;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.Enumeration;
 import java.util.TimeZone;
 import java.util.UUID;
@@ -67,6 +68,7 @@ public class JdbcDataSourceWritePathTest {
             s.execute("INSERT INTO items VALUES (1, 'alpha')");
             s.execute("INSERT INTO items VALUES (2, 'beta')");
             s.execute("CREATE TABLE stamps (ts TIMESTAMP)");
+            s.execute("CREATE TABLE days (d DATE)");
         }
     }
 
@@ -248,6 +250,28 @@ public class JdbcDataSourceWritePathTest {
                 ResultSet rs = s.executeQuery("SELECT ts FROM stamps")) {
             rs.next();
             assertEquals(rs.getTimestamp(1), Timestamp.from(Instant.parse(instant)));
+        }
+    }
+
+    @Test(groups = { "unit" })
+    public void mutation_readsADate32DayBefore1970() throws Exception {
+        ByteBuffer body = ByteBuffer.newInstance(64);
+        body.writeInt32(-7140);
+
+        JdbcDataSource ds = new JdbcDataSource("h2-mut-date32", repo(), baseConfig());
+        try {
+            ds.executeMutation("", "days", new TableDefinition(col("d", DataType.Date32)),
+                    new QueryParameters(), body, new Capture());
+        } finally {
+            ds.close();
+        }
+
+        ensureH2Driver();
+        try (Connection conn = DriverManager.getConnection(h2Url, "sa", "");
+                Statement s = conn.createStatement();
+                ResultSet rs = s.executeQuery("SELECT d FROM days")) {
+            rs.next();
+            assertEquals(rs.getDate(1).toLocalDate(), LocalDate.parse("1950-06-15"));
         }
     }
 
