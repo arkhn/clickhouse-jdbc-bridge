@@ -147,7 +147,7 @@
                 "description": "Native type.",
                 "type": "string"
               },
-              "toType": {
+              "to": {
                 "description": "Corresponding data type in ClickHouse.",
                 "$ref": "#definitions/chType"
               }
@@ -156,20 +156,20 @@
               {
                 "required": [
                   "jdbcType",
-                  "toType"
+                  "to"
                 ]
               },
               {
                 "required": [
                   "nativeType",
-                  "toType"
+                  "to"
                 ]
               },
               {
                 "required": [
                   "jdbcType",
                   "nativeType",
-                  "toType"
+                  "to"
                 ]
               }
             ]
