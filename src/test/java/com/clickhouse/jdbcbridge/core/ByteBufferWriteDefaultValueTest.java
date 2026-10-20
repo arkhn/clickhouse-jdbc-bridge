@@ -19,6 +19,7 @@ package com.clickhouse.jdbcbridge.core;
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertTrue;
 
+import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
 
 /**
@@ -44,26 +45,22 @@ public class ByteBufferWriteDefaultValueTest {
                 "writeDefaultValue must emit bytes for " + t + ", got 0");
     }
 
-    /**
-     * The default of a DateTime64 is one second past 1970-01-01, expressed in
-     * milliseconds. It has to be converted to the tick unit of the column,
-     * otherwise a scale-0 column receives 1000 seconds instead of one.
-     */
-    @Test(groups = { "unit" })
-    public void writeDefaultValue_dateTime64FollowsTheScaleOfTheColumn() {
-        DefaultValues dv = new DefaultValues();
+    @DataProvider(name = "dateTime64Scales")
+    Object[][] dateTime64Scales() {
+        return new Object[][] {
+            // scale, tick of the default, one second past 1970-01-01
+            { 0, 1L },
+            { 3, 1000L },
+            { 6, 1000000L },
+        };
+    }
 
-        ByteBuffer seconds = fresh();
-        seconds.writeDefaultValue(col(DataType.DateTime64, DataType.DEFAULT_LENGTH, 23, 0), dv);
-        assertEquals(seconds.readInt64(), 1L);
-
-        ByteBuffer millis = fresh();
-        millis.writeDefaultValue(col(DataType.DateTime64, DataType.DEFAULT_LENGTH, 23, 3), dv);
-        assertEquals(millis.readInt64(), 1000L);
-
-        ByteBuffer micros = fresh();
-        micros.writeDefaultValue(col(DataType.DateTime64, DataType.DEFAULT_LENGTH, 23, 6), dv);
-        assertEquals(micros.readInt64(), 1000000L);
+    @Test(groups = { "unit" }, dataProvider = "dateTime64Scales")
+    public void writeDefaultValue_dateTime64FollowsTheScaleOfTheColumn(int scale, long tick) {
+        ByteBuffer b = fresh();
+        b.writeDefaultValue(col(DataType.DateTime64, DataType.DEFAULT_LENGTH,
+                DataType.DEFAULT_DATETIME64_PRECISION, scale), new DefaultValues());
+        assertEquals(b.readInt64(), tick);
     }
 
     @Test(groups = { "unit" })

@@ -16,6 +16,8 @@
  */
 package com.clickhouse.jdbcbridge;
 
+import static org.testng.Assert.assertEquals;
+
 import java.sql.Connection;
 import java.sql.Statement;
 import java.time.Duration;
@@ -23,6 +25,7 @@ import java.time.Duration;
 import org.testcontainers.containers.JdbcDatabaseContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.containers.wait.strategy.Wait;
+import org.testng.annotations.Test;
 
 public class PostgresIT extends AbstractBridgeIT {
 
@@ -54,11 +57,32 @@ public class PostgresIT extends AbstractBridgeIT {
                     + "  value INT)");
             s.execute("INSERT INTO test_table VALUES "
                     + "(1, 'a', 10), (2, 'b', 20), (3, 'c', 30)");
+            s.execute("CREATE TABLE IF NOT EXISTS dt_table (id INT PRIMARY KEY, ts TIMESTAMP)");
+            s.execute("INSERT INTO dt_table VALUES "
+                    + "(1, '1950-06-15 08:30:00.123456'), "
+                    + "(2, '1970-01-01 00:00:00'), "
+                    + "(3, '2026-01-15 08:30:00.456789'), "
+                    + "(4, '-infinity'), "
+                    + "(5, 'infinity')");
         }
     }
 
     @Override
     protected String smokeQuery() {
         return "SELECT * FROM test_table ORDER BY id";
+    }
+
+    // PostgreSQL reports a scale of 6 for TIMESTAMP, so a tick is a microsecond.
+    @Test(groups = { "sit" })
+    public void testTimestampTicksAreTheSourceWallClock() throws Exception {
+        long[] ticks = postQueryTicks(getDatasourceName(), "SELECT ts FROM dt_table ORDER BY id", 5);
+
+        assertEquals(ticks, new long[] {
+                wallClockTick("1950-06-15T08:30:00.123456", 6),
+                wallClockTick("1970-01-01T00:00:00", 6),
+                wallClockTick("2026-01-15T08:30:00.456789", 6),
+                // infinities saturate to the bounds of ClickHouse
+                wallClockTick("1900-01-01T00:00:00", 6),
+                wallClockTick("2299-12-31T23:59:59.999999", 6) });
     }
 }
