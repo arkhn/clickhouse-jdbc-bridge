@@ -64,6 +64,13 @@ public class ByteBufferWriteDefaultValueTest {
     }
 
     @Test(groups = { "unit" })
+    public void writeDefaultValue_date32IsOneDayPastTheEpoch() {
+        ByteBuffer b = fresh();
+        b.writeDefaultValue(col(DataType.Date32), new DefaultValues());
+        assertEquals(b.readInt32(), 1);
+    }
+
+    @Test(groups = { "unit" })
     public void writeDefaultValue_integerFamilies() {
         DefaultValues dv = new DefaultValues();
         for (DataType t : new DataType[] {
@@ -92,7 +99,7 @@ public class ByteBufferWriteDefaultValueTest {
     public void writeDefaultValue_dateAndDateTimeFamilies() {
         DefaultValues dv = new DefaultValues();
         for (DataType t : new DataType[] {
-                DataType.Date, DataType.DateTime, DataType.DateTime64,
+                DataType.Date, DataType.Date32, DataType.DateTime, DataType.DateTime64,
         }) {
             ByteBuffer b = fresh();
             b.writeDefaultValue(col(t), dv);

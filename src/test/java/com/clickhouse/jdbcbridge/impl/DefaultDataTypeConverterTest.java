@@ -97,8 +97,8 @@ public class DefaultDataTypeConverterTest {
     }
 
     @Test(groups = { "unit" })
-    public void dateMapsToDate() {
-        assertEquals(CONV.from(JDBCType.DATE, "date", 10, 0, true), DataType.Date);
+    public void dateMapsToDate32() {
+        assertEquals(CONV.from(JDBCType.DATE, "date", 10, 0, true), DataType.Date32);
     }
 
 

@@ -85,6 +85,7 @@ public class ColumnDefinitionToStringTest {
             // DateTime64: fromString sets both precision + scale (JSON caps scale at 0).
             { "ts64 DateTime64(3)",                       "`ts64` DateTime64(3)" },
             { "ts DateTime64(6, 'Europe/Paris')",         "`ts` DateTime64(6,'Europe/Paris')" },
+            { "d Nullable(Date32)",                       "`d` Nullable(Date32)" },
             // null default isn't carried — treated as no default.
             { "d Nullable(Int32) DEFAULT null",           "`d` Nullable(Int32)" },
         };

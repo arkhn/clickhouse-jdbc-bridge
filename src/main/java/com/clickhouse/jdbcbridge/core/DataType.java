@@ -31,7 +31,7 @@ public enum DataType {
     Float32(4, 8, 8), Float64(16, 17, 17),
 
     // Date time
-    Date(4, 10, 0), DateTime(8, 19, 0), DateTime64(16, 38, 18),
+    Date(4, 10, 0), Date32(4, 10, 0), DateTime(8, 19, 0), DateTime64(16, 38, 18),
 
     // Decimals
     Decimal(32, 76, 76), Decimal32(4, 9, 9), Decimal64(8, 18, 18), Decimal128(16, 38, 38), Decimal256(32, 76, 76),

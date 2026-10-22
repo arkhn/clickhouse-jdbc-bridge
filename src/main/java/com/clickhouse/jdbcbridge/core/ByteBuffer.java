@@ -23,6 +23,7 @@ import java.math.BigInteger;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.sql.Timestamp;
+import java.time.LocalDate;
 import java.util.Date;
 import java.util.Objects;
 import java.util.TimeZone;
@@ -39,6 +40,8 @@ import io.vertx.core.buffer.Buffer;
 public final class ByteBuffer {
     private static final long DATETIME64_MIN_SECONDS = -2208988800L; // 1900-01-01 00:00:00 UTC
     private static final long DATETIME64_MAX_SECONDS = 10413791999L; // 2299-12-31 23:59:59 UTC
+    private static final long DATE32_MIN_DAY = -25567L; // 1900-01-01
+    private static final long DATE32_MAX_DAY = 120529L; // 2299-12-31
     private static final long[] POWERS_OF_TEN = { 1L, 10L, 100L, 1000L, 10000L, 100000L, 1000000L, 10000000L,
             100000000L, 1000000000L };
 
@@ -654,6 +657,35 @@ public final class ByteBuffer {
         return writeUInt16(daysSinceEpoch <= 0 ? 1 : (daysSinceEpoch > U_INT16_MAX ? U_INT16_MAX : daysSinceEpoch));
     }
 
+    /**
+     * Reads the day number of a Date32 column, saturated like
+     * {@link #writeDate32(java.sql.Date)}, as a date at midnight in the zone of the
+     * JVM, which is what a JDBC driver expects.
+     */
+    public java.sql.Date readDate32() {
+        long day = Math.min(Math.max(this.readInt32(), DATE32_MIN_DAY), DATE32_MAX_DAY);
+        return java.sql.Date.valueOf(LocalDate.ofEpochDay(day));
+    }
+
+    /**
+     * Writes a date as the day number of a Date32 column, a signed Int32 counting
+     * days since 1970-01-01.
+     *
+     * - The date is read in the zone of the JVM, the one the driver used to build
+     *   it, so the timezone of this buffer does not apply.
+     * - A date outside the ClickHouse range, 1900-01-01 to 2299-12-31, saturates to
+     *   the nearest bound, like a DateTime64. The day is computed from the
+     *   milliseconds rather than with toLocalDate(), which drops the era of a date
+     *   as far as PostgreSQL -infinity and turns it into a date far in the future.
+     */
+    public ByteBuffer writeDate32(java.sql.Date value) {
+        // Clamped first, like in writeDateTime64, so that the offset cannot overflow.
+        long time = Math.min(Math.max(Objects.requireNonNull(value).getTime(),
+                (DATE32_MIN_DAY - 1) * MILLIS_IN_DAY), (DATE32_MAX_DAY + 2) * MILLIS_IN_DAY);
+        long day = Math.floorDiv(time + TimeZone.getDefault().getOffset(time), MILLIS_IN_DAY);
+        return writeInt32((int) Math.min(Math.max(day, DATE32_MIN_DAY), DATE32_MAX_DAY));
+    }
+
     public String readFixedString(int length) {
         return readFixedString(length, StandardCharsets.UTF_8);
     }
@@ -768,6 +800,9 @@ public final class ByteBuffer {
                 break;
             case Date:
                 writeUInt16(defaultValues.Date.getValue());
+                break;
+            case Date32:
+                writeInt32(defaultValues.Date32.getValue());
                 break;
             case DateTime:
                 writeUInt32(defaultValues.Datetime.getValue());

@@ -193,6 +193,7 @@ public interface DataTypeConverter {
                 mType = M_TYPE_NUMBER;
                 break;
             case Date:
+            case Date32:
                 mType = M_TYPE_DATE;
                 break;
             case DateTime:

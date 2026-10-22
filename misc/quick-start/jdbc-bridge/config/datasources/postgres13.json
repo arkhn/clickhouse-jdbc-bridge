@@ -2,7 +2,7 @@
   "$schema": "../../../../../docker/config/datasource.jschema",
   "postgres13": {
     "converter": {
-      "mappings": [{ "nativeType": "bool", "toType": "String" }]
+      "mappings": [{ "nativeType": "bool", "to": "String" }]
     },
     "driverClassName": "org.postgresql.Driver",
     "jdbcUrl": "jdbc:postgresql://db-postgres13/test",
