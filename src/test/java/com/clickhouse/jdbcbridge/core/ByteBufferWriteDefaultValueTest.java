@@ -19,6 +19,7 @@ package com.clickhouse.jdbcbridge.core;
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertTrue;
 
+import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
 
 /**
@@ -42,6 +43,24 @@ public class ByteBufferWriteDefaultValueTest {
     private static void assertNonEmpty(ByteBuffer b, DataType t) {
         assertTrue(b.length() > 0,
                 "writeDefaultValue must emit bytes for " + t + ", got 0");
+    }
+
+    @DataProvider(name = "dateTime64Scales")
+    Object[][] dateTime64Scales() {
+        return new Object[][] {
+            // scale, tick of the default, one second past 1970-01-01
+            { 0, 1L },
+            { 3, 1000L },
+            { 6, 1000000L },
+        };
+    }
+
+    @Test(groups = { "unit" }, dataProvider = "dateTime64Scales")
+    public void writeDefaultValue_dateTime64FollowsTheScaleOfTheColumn(int scale, long tick) {
+        ByteBuffer b = fresh();
+        b.writeDefaultValue(col(DataType.DateTime64, DataType.DEFAULT_LENGTH,
+                DataType.DEFAULT_DATETIME64_PRECISION, scale), new DefaultValues());
+        assertEquals(b.readInt64(), tick);
     }
 
     @Test(groups = { "unit" })

@@ -208,8 +208,8 @@ public class ByteBufferTest {
         assertEquals(buffer.readDate(), date2);
         assertEquals(buffer.readDateTime(), dt1);
         assertEquals(buffer.readDateTime(TimeZone.getTimeZone("UTC")), dt2);
-        assertEquals(buffer.readDateTime64(), xdt1);
-        assertEquals(buffer.readDateTime64(), xdt2);
+        assertEquals(buffer.readDateTime64(3, null), xdt1);
+        assertEquals(buffer.readDateTime64(3, null), xdt2);
     }
 
     @Test(groups = { "unit" }, expectedExceptions = ArithmeticException.class)

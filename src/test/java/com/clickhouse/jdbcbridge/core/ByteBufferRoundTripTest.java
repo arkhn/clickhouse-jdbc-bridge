@@ -220,20 +220,6 @@ public class ByteBufferRoundTripTest {
     }
 
     @Test(groups = { "unit" })
-    public void dateTime64_acrossScales() {
-        // Scale 3 = milliseconds.
-        ByteBuffer b = fresh();
-        Timestamp t = new Timestamp(1_700_000_000_123L);
-        TimeZone utc = TimeZone.getTimeZone("UTC");
-
-        b.writeDateTime64(t, 3, utc);
-
-        Timestamp r = b.readDateTime64(utc);
-        assertEquals(r.getTime(), t.getTime(),
-                "DateTime64(scale=3) must preserve millisecond precision");
-    }
-
-    @Test(groups = { "unit" })
     public void enum8AndEnum16Write_int_and_byte_overloads() {
         ByteBuffer b = fresh();
         b.writeEnum8((byte) 1);
