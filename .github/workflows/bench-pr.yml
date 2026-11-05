@@ -51,17 +51,17 @@ jobs:
           name: bench-pr-head
           path: misc/bench/results/pr-head/
 
-      - name: Checkout main
+      - name: Checkout master
         run: |
-          git fetch origin main
-          git checkout origin/main -- misc/bench
+          git fetch origin master
+          git checkout origin/master -- misc/bench
           docker compose -f misc/bench/docker-compose.yml down -v || true
 
-      - name: Build bridge image (main target)
+      - name: Build bridge image (master target)
         run: |
           docker build --target full -t arkhn/clickhouse-jdbc-bridge:bench .
 
-      - name: Run bench (main baseline)
+      - name: Run bench (master baseline)
         working-directory: misc/bench
         run: |
           ./run.sh --workloads W1,W2 --duration 30 --concurrency 10 \
