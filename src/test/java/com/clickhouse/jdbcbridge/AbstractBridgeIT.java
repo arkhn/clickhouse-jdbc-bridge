@@ -23,11 +23,14 @@ import static org.testng.Assert.assertTrue;
 import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.URLEncoder;
+import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.DriverManager;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
@@ -463,6 +466,34 @@ public abstract class AbstractBridgeIT {
                 "Expected 200 from bridge for [" + tableOrSql + "]; body=" + r.body);
 
         return r.rawBody;
+    }
+
+    /**
+     * Decodes the answer of a query whose cells are all a non-null Nullable(Int64),
+     * which is how a DateTime64 tick travels, row after row.
+     */
+    protected long[] postQueryTicks(String connectionString, String tableOrSql, int cells) throws Exception {
+        byte[] body = postQueryBytes(connectionString, tableOrSql);
+        assertEquals(body.length, cells * 9, "expected " + cells + " cells of a null flag and an Int64");
+
+        java.nio.ByteBuffer wire = java.nio.ByteBuffer.wrap(body).order(ByteOrder.LITTLE_ENDIAN);
+        long[] ticks = new long[cells];
+        for (int i = 0; i < cells; i++) {
+            assertEquals(wire.get(), (byte) 0, "cell " + i + " is null");
+            ticks[i] = wire.getLong();
+        }
+        return ticks;
+    }
+
+    /**
+     * The tick the bridge writes for a source timestamp: its wall clock read as
+     * UTC, because the driver and the bridge both apply the zone of the JVM and
+     * the two shifts cancel.
+     */
+    protected static long wallClockTick(String localDateTime, int scale) {
+        LocalDateTime wallClock = LocalDateTime.parse(localDateTime);
+        long unit = (long) Math.pow(10, scale);
+        return wallClock.toEpochSecond(ZoneOffset.UTC) * unit + wallClock.getNano() / (1000000000L / unit);
     }
 
     private String doPostQuery(String connectionString, String tableOrSql, boolean assert200)

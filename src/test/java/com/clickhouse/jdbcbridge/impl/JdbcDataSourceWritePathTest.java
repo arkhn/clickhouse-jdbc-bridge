@@ -25,11 +25,15 @@ import java.sql.Driver;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.Statement;
+import java.sql.Timestamp;
+import java.time.Instant;
 import java.util.Enumeration;
+import java.util.TimeZone;
 import java.util.UUID;
 
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
+import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
 
 import com.clickhouse.jdbcbridge.core.ByteBuffer;
@@ -62,6 +66,7 @@ public class JdbcDataSourceWritePathTest {
             s.execute("CREATE TABLE items (id INT PRIMARY KEY, label VARCHAR(32))");
             s.execute("INSERT INTO items VALUES (1, 'alpha')");
             s.execute("INSERT INTO items VALUES (2, 'beta')");
+            s.execute("CREATE TABLE stamps (ts TIMESTAMP)");
         }
     }
 
@@ -207,6 +212,42 @@ public class JdbcDataSourceWritePathTest {
                     "failed mutation must not have flushed bytes to the writer");
         } finally {
             ds.close();
+        }
+    }
+
+    @DataProvider(name = "dateTime64Inserts")
+    Object[][] dateTime64Inserts() {
+        return new Object[][] {
+            // tick sent by ClickHouse, scale, instant stored in the source
+            { 1768465800L, 0, "2026-01-15T08:30:00Z" },
+            { 1768465800123L, 3, "2026-01-15T08:30:00.123Z" },
+            { -616865400L, 0, "1950-06-15T08:30:00Z" },
+            { -616865399876544L, 6, "1950-06-15T08:30:00.123456Z" },
+        };
+    }
+
+    @Test(groups = { "unit" }, dataProvider = "dateTime64Inserts")
+    public void mutation_readsADateTime64TickAtTheScaleOfTheColumn(long tick, int scale, String instant)
+            throws Exception {
+        ByteBuffer body = ByteBuffer.newInstance(64, TimeZone.getTimeZone("UTC"));
+        body.writeInt64(tick);
+
+        JdbcDataSource ds = new JdbcDataSource("h2-mut-datetime64", repo(), baseConfig());
+        try {
+            ds.executeMutation("", "stamps",
+                    new TableDefinition(new ColumnDefinition("ts", DataType.DateTime64, false,
+                            DataType.DEFAULT_LENGTH, DataType.DEFAULT_DATETIME64_PRECISION, scale)),
+                    new QueryParameters(), body, new Capture());
+        } finally {
+            ds.close();
+        }
+
+        ensureH2Driver();
+        try (Connection conn = DriverManager.getConnection(h2Url, "sa", "");
+                Statement s = conn.createStatement();
+                ResultSet rs = s.executeQuery("SELECT ts FROM stamps")) {
+            rs.next();
+            assertEquals(rs.getTimestamp(1), Timestamp.from(Instant.parse(instant)));
         }
     }
 

@@ -205,6 +205,25 @@ public class TypedParameterMergeTest {
         assertTrue(b.length() > 0);
     }
 
+    @DataProvider(name = "dateTime64Scales")
+    Object[][] dateTime64Scales() {
+        return new Object[][] {
+            // scale, tick of 2026-01-15 08:30:00.123 UTC
+            { 0, 1768465800L },
+            { 3, 1768465800123L },
+            { 6, 1768465800123000L },
+        };
+    }
+
+    @Test(groups = { "unit" }, dataProvider = "dateTime64Scales")
+    public void writeValueTo_dateTime64ColumnFollowsItsScale(int scale, long tick) {
+        ColumnDefinition column = new ColumnDefinition("ts", DataType.DateTime64, false, DataType.DEFAULT_LENGTH,
+                DataType.DEFAULT_DATETIME64_PRECISION, scale, "UTC", 1768465800123L, null);
+        ByteBuffer b = fresh();
+        column.writeValueTo(b);
+        assertEquals(b.readInt64(), tick);
+    }
+
     @Test(groups = { "unit" })
     public void writeValueTo_uintFamilies() {
         ByteBuffer b = fresh();

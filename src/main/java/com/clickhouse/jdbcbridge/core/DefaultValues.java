@@ -108,7 +108,8 @@ public class DefaultValues {
         Utils.addTypedParameter(types, this.Date = new TypedParameter<>(Integer.class, DataType.Date.name(), 1));
         Utils.addTypedParameter(types, this.Datetime = new TypedParameter<>(Long.class, DataType.DateTime.name(), 1L));
         Utils.addTypedParameter(types,
-                this.Datetime64 = new TypedParameter<>(Long.class, DataType.DateTime64.name(), 1000L));
+                this.Datetime64 = new TypedParameter<>(Long.class, DataType.DateTime64, DataType.DateTime64.name(),
+                        1000L));
 
         Utils.addTypedParameter(types,
                 this.Decimal = new TypedParameter<>(BigDecimal.class, DataType.Decimal.name(), BigDecimal.ZERO));
