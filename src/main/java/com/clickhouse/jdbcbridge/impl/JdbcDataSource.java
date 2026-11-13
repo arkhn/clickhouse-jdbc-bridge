@@ -789,6 +789,17 @@ public class JdbcDataSource extends NamedDataSource {
                 }
             }
 
+            if (type == DataType.DateTime64) {
+                // A JDBC timestamp carries milliseconds at best (see
+                // ByteBuffer.writeDateTime64), so the scale read from the source
+                // is not real precision. Normalize it, otherwise the declared
+                // ClickHouse type follows the DDL of every single source.
+                // Precision goes with it: ColumnDefinition clamps the scale to the
+                // precision, and some drivers report no precision at all.
+                precision = DataType.DEFAULT_DATETIME64_PRECISION;
+                scale = DataType.DEFAULT_DATETIME64_SCALE;
+            }
+
             columns[i - 1] = new ColumnDefinition(name, type, ResultSetMetaData.columnNoNulls != nullability, length,
                     precision, scale);
         }
